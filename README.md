@@ -119,8 +119,6 @@ The protocol is inspired by modern “hyper-parallel” development practices an
 
 ## Goals
 
-> This project is written with **Google-style roles** in mind: Developer Productivity, AI Infrastructure, Applied Research, and Platform Engineering.
-
 * Treat AI agents as **collaborative workers**, not tools
 
 * Minimize human idle time (I/O wait)
