@@ -7,8 +7,6 @@
 
 ## 概要（日本語）
 
-> ※本READMEは **Google / Big Tech（Research・Platform・Developer Productivity系）ポジション** を意識した構成になっています。
-
 このリポジトリは、**複数のAIエージェント（人格AI）を並列・直列に統合運用するための軽量プロトコル**を定義したものです。
 
 単一AIにすべてを任せるのではなく、
