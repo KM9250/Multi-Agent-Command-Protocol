@@ -1,0 +1,33 @@
+{
+  "protocol": "macp",
+  "version": "0.1.0",
+  "task_id": "task-20260707-001",
+  "task_type": "coding",
+  "intent": "notify_user",
+  "from": { "agent_id": "vega", "agent_role": "spec_writer" },
+  "to": { "type": "user", "target": "android" },
+  "command": "/spec",
+  "command_alias": "/vega-spec",
+  "status": "done",
+  "priority": "normal",
+  "summary": "Codex向けの実装指示書を作成しました。",
+  "requirement_summary": "既存仕様を壊さず、通知パケットの最小実装とSSE配信を追加する方針で整理。",
+  "agent_message": "指示書は最小構成でまとめてあります。Phase 1の範囲だけ先に確認してもらえれば十分です。",
+  "detail": "既存仕様を壊さず、通知パケットの最小実装とSSE配信を追加する方針で整理しています。",
+  "result": {
+    "format": "markdown",
+    "path": "./outputs/codex_instruction.md",
+    "url": null
+  },
+  "evaluation": {
+    "confidence": 0.86,
+    "requirement_satisfaction": 0.9,
+    "mood": "good",
+    "requires_user_action": true
+  },
+  "actions": [
+    { "label": "内容を確認する", "action_type": "open_file", "target": "./outputs/codex_instruction.md" },
+    { "label": "Codexに渡す", "action_type": "copy_prompt", "target": "./outputs/codex_instruction.md" }
+  ],
+  "created_at": "2026-07-07T06:00:00+09:00"
+}
