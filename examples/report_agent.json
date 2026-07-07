@@ -1,0 +1,42 @@
+{
+  "protocol": "macp",
+  "version": "0.1.0",
+  "task_id": "task-20260707-002",
+  "task_type": "coding",
+  "intent": "report_agent",
+  "from": { "agent_id": "curren", "agent_role": "reviewer" },
+  "to": { "type": "agent", "target": "vega" },
+  "command": "/review",
+  "command_alias": "/curren-check",
+  "status": "done",
+  "priority": "normal",
+  "summary": "レビュー完了。指摘1件を反映すれば仕様書化に進めます。",
+  "requirement_summary": "handoff-001 で依頼された、分類結果の妥当性レビュー。",
+  "agent_message": "分類は妥当です。ただし再送カーソルの件は原因が2つに分かれる可能性があるので、仕様書には両方書いておくことを推奨します。",
+  "detail": "指摘: event_idカーソル未永続化のほか、読み取りタイムアウト設定不足の可能性も併記すべき。",
+  "result": {
+    "format": "markdown",
+    "path": "./outputs/review_result.md",
+    "url": null
+  },
+  "evaluation": {
+    "confidence": 0.82,
+    "requirement_satisfaction": 0.95,
+    "mood": "good",
+    "requires_user_action": false
+  },
+  "handoff": {
+    "handoff_id": "handoff-001",
+    "requested_command": "/review",
+    "reason": "handoff-001 への返却",
+    "priority": "normal",
+    "return_to": "vega",
+    "return_intent": "report_agent",
+    "return_format": "json",
+    "hop": 2,
+    "max_hops": 3,
+    "confidence_gate": 0.75,
+    "must_return_to": true
+  },
+  "created_at": "2026-07-07T06:25:00+09:00"
+}

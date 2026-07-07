@@ -1,0 +1,32 @@
+{
+  "protocol": "macp",
+  "version": "0.1.0",
+  "task_id": "task-20260707-004",
+  "task_type": "portfolio",
+  "intent": "need_review",
+  "from": { "agent_id": "curren", "agent_role": "polisher" },
+  "to": { "type": "user", "target": "web" },
+  "command": "/polish",
+  "command_alias": "/curren-polish",
+  "status": "need_review",
+  "priority": "normal",
+  "summary": "README整形が完了しましたが、表現の最終判断が必要です。",
+  "requirement_summary": "ポートフォリオREADMEの文章整形と構成改善。技術的な内容の書き換えは範囲外。",
+  "agent_message": "2案作りました。実績の見せ方が違うだけなので、好みで選んでください。どちらでも品質は保証します。",
+  "detail": "案A: 時系列ベースの構成 / 案B: スキルカテゴリベースの構成。差分は ./outputs/readme_diff.md 参照。",
+  "result": {
+    "format": "markdown",
+    "path": "./outputs/readme_polished.md",
+    "url": null
+  },
+  "evaluation": {
+    "confidence": 0.7,
+    "requirement_satisfaction": 0.85,
+    "requires_user_action": true
+  },
+  "actions": [
+    { "label": "2案を比較する", "action_type": "open_file", "target": "./outputs/readme_diff.md" },
+    { "label": "確認済みにする", "action_type": "ack", "target": "task-20260707-004" }
+  ],
+  "created_at": "2026-07-07T09:15:00+09:00"
+}
