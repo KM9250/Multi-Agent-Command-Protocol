@@ -56,6 +56,15 @@ def test_enum_policy():
     assert packet.evaluation.mood == "great"
 
 
+def test_version_pattern_accepts_major_zero_semver():
+    data = load("notify_done.json")
+    data["version"] = "0.12.3"
+    assert MacpPacket.model_validate(data).version == "0.12.3"
+    data["version"] = "1.0.0"
+    with pytest.raises(ValidationError):
+        MacpPacket.model_validate(data)
+
+
 def test_handoff_required():
     data = load("handoff_agent.json")
     data.pop("handoff")
