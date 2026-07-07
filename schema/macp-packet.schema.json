@@ -3,41 +3,139 @@
     "ActionItem": {
       "additionalProperties": true,
       "properties": {
-        "action_type": {"title": "Action Type", "type": "string"},
-        "label": {"title": "Label", "type": "string"},
-        "target": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Target"}
+        "action_type": {
+          "title": "Action Type",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        }
       },
-      "required": ["label", "action_type"],
+      "required": [
+        "label",
+        "action_type"
+      ],
       "title": "ActionItem",
       "type": "object"
     },
     "AgentRef": {
       "additionalProperties": true,
       "properties": {
-        "agent_id": {"title": "Agent Id", "type": "string"},
-        "agent_role": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Agent Role"}
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "agent_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Role"
+        }
       },
-      "required": ["agent_id"],
+      "required": [
+        "agent_id"
+      ],
       "title": "AgentRef",
       "type": "object"
     },
     "Destination": {
       "additionalProperties": true,
       "properties": {
-        "target": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Target"},
-        "type": {"enum": ["user", "agent", "broadcast"], "title": "Type", "type": "string"}
+        "target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        },
+        "type": {
+          "enum": [
+            "user",
+            "agent",
+            "broadcast"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
       },
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "title": "Destination",
       "type": "object"
     },
     "Evaluation": {
       "additionalProperties": true,
       "properties": {
-        "confidence": {"anyOf": [{"maximum": 1.0, "minimum": 0.0, "type": "number"}, {"type": "null"}], "default": null, "title": "Confidence"},
-        "mood": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Mood"},
-        "requirement_satisfaction": {"anyOf": [{"maximum": 1.0, "minimum": 0.0, "type": "number"}, {"type": "null"}], "default": null, "title": "Requirement Satisfaction"},
-        "requires_user_action": {"default": false, "title": "Requires User Action", "type": "boolean"}
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "mood": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mood"
+        },
+        "requirement_satisfaction": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requirement Satisfaction"
+        },
+        "requires_user_action": {
+          "default": false,
+          "title": "Requires User Action",
+          "type": "boolean"
+        }
       },
       "title": "Evaluation",
       "type": "object"
@@ -45,39 +143,356 @@
     "Handoff": {
       "additionalProperties": true,
       "properties": {
-        "handoff_id": {"title": "Handoff Id", "type": "string"},
-        "requested_command": {"title": "Requested Command", "type": "string"},
-        "reason": {"title": "Reason", "type": "string"},
-        "return_to": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Return To"},
-        "hop": {"title": "Hop", "type": "integer"},
-        "max_hops": {"title": "Max Hops", "type": "integer"},
-        "must_return_to": {"default": true, "title": "Must Return To", "type": "boolean"}
+        "confidence_gate": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence Gate"
+        },
+        "handoff_id": {
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "hop": {
+          "title": "Hop",
+          "type": "integer"
+        },
+        "max_hops": {
+          "title": "Max Hops",
+          "type": "integer"
+        },
+        "must_return_to": {
+          "default": true,
+          "title": "Must Return To",
+          "type": "boolean"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "normal",
+                "high"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "requested_command": {
+          "title": "Requested Command",
+          "type": "string"
+        },
+        "return_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Return Format"
+        },
+        "return_intent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Return Intent"
+        },
+        "return_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Return To"
+        }
       },
-      "required": ["handoff_id", "requested_command", "reason", "hop", "max_hops"],
+      "required": [
+        "handoff_id",
+        "requested_command",
+        "reason",
+        "hop",
+        "max_hops"
+      ],
       "title": "Handoff",
       "type": "object"
     },
-    "ResultRef": {"additionalProperties": true, "title": "ResultRef", "type": "object"}
+    "ResultRef": {
+      "additionalProperties": true,
+      "properties": {
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Format"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "title": "ResultRef",
+      "type": "object"
+    }
   },
   "additionalProperties": true,
   "properties": {
-    "protocol": {"title": "Protocol", "type": "string"},
-    "version": {"title": "Version", "type": "string"},
-    "task_id": {"title": "Task Id", "type": "string"},
-    "task_type": {"title": "Task Type", "type": "string"},
-    "intent": {"enum": ["notify_user", "handoff_agent", "report_agent", "log_only", "need_review"], "title": "Intent", "type": "string"},
-    "from": {"$ref": "#/$defs/AgentRef"},
-    "to": {"anyOf": [{"$ref": "#/$defs/Destination"}, {"type": "null"}], "default": null},
-    "command": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Command"},
-    "command_alias": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Command Alias"},
-    "status": {"enum": ["queued", "running", "done", "failed", "blocked", "need_review"], "title": "Status", "type": "string"},
-    "priority": {"anyOf": [{"enum": ["low", "normal", "high"], "type": "string"}, {"type": "null"}], "default": null, "title": "Priority"},
-    "summary": {"title": "Summary", "type": "string"},
-    "evaluation": {"anyOf": [{"$ref": "#/$defs/Evaluation"}, {"type": "null"}], "default": null},
-    "handoff": {"anyOf": [{"$ref": "#/$defs/Handoff"}, {"type": "null"}], "default": null},
-    "created_at": {"format": "date-time", "title": "Created At", "type": "string"}
+    "actions": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/ActionItem"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Actions"
+    },
+    "agent_message": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agent Message"
+    },
+    "command": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Command"
+    },
+    "command_alias": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Command Alias"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "detail": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Detail"
+    },
+    "evaluation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Evaluation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "from": {
+      "$ref": "#/$defs/AgentRef"
+    },
+    "handoff": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Handoff"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "intent": {
+      "enum": [
+        "notify_user",
+        "handoff_agent",
+        "report_agent",
+        "log_only",
+        "need_review"
+      ],
+      "title": "Intent",
+      "type": "string"
+    },
+    "priority": {
+      "anyOf": [
+        {
+          "enum": [
+            "low",
+            "normal",
+            "high"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Priority"
+    },
+    "protocol": {
+      "const": "macp",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "requirement_summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requirement Summary"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResultRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "running",
+        "done",
+        "failed",
+        "blocked",
+        "need_review"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_type": {
+      "title": "Task Type",
+      "type": "string"
+    },
+    "to": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Destination"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "version": {
+      "pattern": "^0\\.\\d+\\.\\d+$",
+      "title": "Version",
+      "type": "string"
+    }
   },
-  "required": ["protocol", "version", "task_id", "task_type", "intent", "from", "status", "summary", "created_at"],
+  "required": [
+    "protocol",
+    "version",
+    "task_id",
+    "task_type",
+    "intent",
+    "from",
+    "status",
+    "summary",
+    "created_at"
+  ],
   "title": "MacpPacket",
   "type": "object"
 }

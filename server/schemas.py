@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .config import get_settings
 
+logger = logging.getLogger(__name__)
+
+Protocol = Literal["macp"]
 Intent = Literal["notify_user", "handoff_agent", "report_agent", "log_only", "need_review"]
 Status = Literal["queued", "running", "done", "failed", "blocked", "need_review"]
 Priority = Literal["low", "normal", "high"]
@@ -19,6 +23,8 @@ COMMAND_ALIASES = {
     "/vega-spec": "/spec",
 }
 SERVER_FIELDS = {"event_id", "received_at", "mood_computed"}
+KNOWN_TASK_TYPES = {"portfolio", "coding", "avatar_3d", "research", "document", "slides", "agent_handoff", "notification_test", "maintenance"}
+KNOWN_MOODS = {"good", "caution", "bad", "blocked", "unknown"}
 
 
 class CompatModel(BaseModel):
@@ -64,7 +70,7 @@ class Handoff(CompatModel):
     return_format: str | None = None
     hop: int
     max_hops: int
-    confidence_gate: float | None = None
+    confidence_gate: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
     must_return_to: bool = True
 
     @model_validator(mode="after")
@@ -75,8 +81,8 @@ class Handoff(CompatModel):
 
 
 class MacpPacket(CompatModel):
-    protocol: str
-    version: str
+    protocol: Protocol
+    version: str = Field(pattern=r"^0\.\d+\.\d+$")
     task_id: str
     task_type: str
     intent: Intent
@@ -103,13 +109,6 @@ class MacpPacket(CompatModel):
             return {k: v for k, v in data.items() if k not in SERVER_FIELDS}
         return data
 
-    @field_validator("protocol")
-    @classmethod
-    def validate_protocol(cls, value: str) -> str:
-        if value != "macp":
-            raise ValueError('protocol must be "macp"')
-        return value
-
     @field_validator("version")
     @classmethod
     def validate_version(cls, value: str) -> str:
@@ -127,6 +126,10 @@ class MacpPacket(CompatModel):
 
     @model_validator(mode="after")
     def validate_handoff_required(self) -> "MacpPacket":
+        if self.task_type not in KNOWN_TASK_TYPES:
+            logger.warning("unknown task_type accepted: %s", self.task_type)
+        if self.evaluation and self.evaluation.mood and self.evaluation.mood not in KNOWN_MOODS:
+            logger.warning("unknown evaluation.mood accepted: %s", self.evaluation.mood)
         if self.intent == "handoff_agent" and self.handoff is None:
             raise ValueError("handoff is required when intent is handoff_agent")
         return self
@@ -173,6 +176,10 @@ def normalize_packet(packet: MacpPacket) -> dict:
     if data.get("command") in COMMAND_ALIASES:
         data["command_alias"] = data["command"]
         data["command"] = COMMAND_ALIASES[data["command"]]
+    handoff = data.get("handoff")
+    if handoff and handoff.get("requested_command") in COMMAND_ALIASES:
+        handoff["requested_command_alias"] = handoff["requested_command"]
+        handoff["requested_command"] = COMMAND_ALIASES[handoff["requested_command"]]
     data.setdefault("to", {"type": "broadcast"})
     data.setdefault("priority", "normal")
     data["received_at"] = datetime.now(timezone.utc).isoformat()

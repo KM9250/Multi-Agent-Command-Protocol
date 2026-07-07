@@ -101,6 +101,21 @@ def test_server_fields_are_discarded():
     assert normalized["mood_computed"] == "caution"
 
 
+def test_handoff_requested_command_alias_normalization():
+    data = load("handoff_agent.json")
+    data["handoff"]["requested_command"] = "/curren-check"
+    normalized = normalize_packet(MacpPacket.model_validate(data))
+    assert normalized["handoff"]["requested_command"] == "/review"
+    assert normalized["handoff"]["requested_command_alias"] == "/curren-check"
+
+
+def test_handoff_confidence_gate_range_rejected():
+    data = load("handoff_agent.json")
+    data["handoff"]["confidence_gate"] = 1.5
+    with pytest.raises(ValidationError):
+        MacpPacket.model_validate(data)
+
+
 def test_schema_drift(tmp_path):
     before = (ROOT / "schema" / "macp-packet.schema.json").read_text(encoding="utf-8")
     subprocess.run([sys.executable, "scripts/generate_schema.py"], cwd=ROOT, check=True)

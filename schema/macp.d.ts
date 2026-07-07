@@ -5,7 +5,7 @@ export type KnownMood = "good" | "caution" | "bad" | "blocked" | "unknown";
 export type Mood = KnownMood | (string & {});
 export type KnownTaskType = "portfolio" | "coding" | "avatar_3d" | "research" | "document" | "slides" | "agent_handoff" | "notification_test" | "maintenance";
 export type TaskType = KnownTaskType | (string & {});
-export type KnownActionType = "open_file" | "copy_prompt" | "retry" | "ack";
+export type KnownActionType = "open_file" | "open_url" | "copy_prompt" | "retry" | "ack";
 export type ActionType = KnownActionType | (string & {});
 
 export interface AgentRef { agent_id: string; agent_role?: string; [key: string]: unknown; }
