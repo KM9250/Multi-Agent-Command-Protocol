@@ -33,16 +33,16 @@ uvicorn server.app:app --host 0.0.0.0 --port 8765
 | --- | --- | --- | --- |
 | `POST /api/notify` | ✔ | 1 | 通知パケットを登録 |
 | `POST /api/handoff` | ✔ | 1 | ハンドオフパケットを登録（Phase 1 は記録のみ） |
-| `GET /api/tasks` | – | 1 | 通知履歴一覧（フィルタ・ページング付き） |
-| `GET /api/tasks/{task_id}` | – | 1 | 特定タスクの詳細（イベント履歴含む） |
-| `GET /api/stream` | –※ | 2 | SSE でイベントをリアルタイム配信 |
-| `GET /api/artifacts/{task_id}` | – | 2 | 成果物のサーバー経由配信（任意機能） |
+| `GET /api/tasks` | ✔※ | 1 | 通知履歴一覧（フィルタ・ページング付き） |
+| `GET /api/tasks/{task_id}` | ✔※ | 1 | 特定タスクの詳細（イベント履歴含む） |
+| `GET /api/stream` | ✔※ | 2 | SSE でイベントをリアルタイム配信 |
+| `GET /api/artifacts/{task_id}` | ✔※ | 2 | 成果物のサーバー経由配信（任意機能） |
 | `POST /api/tasks/{task_id}/ack` | ✔ | 3 | ユーザー確認済みにする |
 | `POST /api/tasks/{task_id}/retry` | ✔ | 3 | 再実行要求を登録・配信 |
-| `GET /api/health` | – | 1 | 疎通確認（`{"status": "ok", "version": "0.1.0"}`） |
-| `GET /` | – | 2 | Web UI（静的 HTML） |
+| `GET /api/health` | – | 1 | 疎通確認（`{"status": "ok"}` のみ。詳細情報は返さない） |
+| `GET /` | – | 2 | Web UI（静的 HTML を返すだけ。API アクセス時に UI がトークン入力を求める） |
 
-※ `MACP_TOKEN` 設定時は GET 系にもトークンを要求する（§9）。
+※ `MACP_TOKEN` 設定時のみトークンを要求する（未設定なら認証無効）。`GET /api/stream` は EventSource の制約のため `?token=` クエリを許可する（§9）。
 
 ### 2.1 `POST /api/notify`
 
@@ -65,17 +65,16 @@ uvicorn server.app:app --host 0.0.0.0 --port 8765
 
 ### 2.4 `POST /api/tasks/{task_id}/ack`
 
-- 終端状態（`done` / `failed` / `blocked` / `need_review`）のタスクを `acknowledged` に遷移させ、`acknowledged_at` を記録
-- `ack` イベントを `events` に追記し、SSE 配信（他端末の UI も既読表示に変わる）
-- 冪等: すでに `acknowledged` なら `200` で現状を返す
+- 終端状態（`done` / `failed` / `blocked` / `need_review`）のタスクに `acknowledged = true` / `acknowledged_at` を設定する。**`status` は変更しない**（元の終端状態が一覧上で失われないようにする）
+- `ack` イベント（server event envelope、§3.1）を `events` に追記し、SSE 配信（他端末の UI も既読表示に変わる）
+- 冪等: すでに ack 済みなら `200` で現状を返す
 
 ### 2.5 `POST /api/tasks/{task_id}/retry`
 
 **サーバーは AI タスクを実行しない。** retry は「再実行要求」の記録・配信である。
 
 1. 対象タスクの元パケットから `from.agent_id` を取り出し、宛先とする
-2. `retry_requested` イベントを `events` に追記。ペイロードは MACP パケット形式:
-   - `intent: "handoff_agent"` ではなく専用の event_type で区別し、`to: {"type": "agent", "target": "<元の from.agent_id>"}`、`summary: "再実行が要求されました"`、任意の `reason`（リクエストボディから）
+2. `retry_requested` イベントを `events` に追記。ペイロードは **MACP パケットではなく server event envelope**（§3.1）とし、`data` に `target_agent`（手順1の宛先）と任意の `reason`（リクエストボディから）を持たせる
 3. SSE 配信。エージェント（またはエージェントを操作する人間）がこれを拾って再実行する
 4. `tasks.retry_requested_at` を更新
 
@@ -96,16 +95,28 @@ data: {"protocol":"macp", ... , "event_id":42, "mood_computed":"good"}
 
 id: 43
 event: ack
-data: {"task_id":"task-20260707-001","acknowledged_at":"..."}
+data: {"event_id":43,"event_type":"ack","task_id":"task-20260707-001","created_at":"...","data":{"acknowledged_at":"..."}}
 
 : ping                    ← 15 秒ごとのハートビート（コメント行）
 ```
 
-| event | 内容 |
+| event | data の中身 |
 | --- | --- |
-| `packet` | 通知/ハンドオフ/返却パケット本体 |
-| `ack` | ack 状態の変化 |
-| `retry` | 再実行要求 |
+| `packet` | 通知/ハンドオフ/返却パケット本体（正規化済み MACP パケット + サーバー付与フィールド） |
+| `ack` | server event envelope（下記） |
+| `retry_requested` | server event envelope（下記） |
+
+**server event envelope**: `ack` / `retry_requested` は MACP パケットではなく、サーバー内部イベント専用の別スキーマで配信する（パケットと混ざると `protocol` / `intent` 等の必須フィールドを偽装的に埋めることになり安全でないため）。
+
+```json
+{
+  "event_id": 44,
+  "event_type": "retry_requested",
+  "task_id": "task-20260707-003",
+  "created_at": "2026-07-07T10:00:00+09:00",
+  "data": { "target_agent": "curren", "reason": "ボーン名修正後の再検証" }
+}
+```
 
 - `id:` には必ず `event_id`（§4）を入れる。これが再送カーソルになる
 - ハートビートは接続維持（プロキシ・スリープ検出）のため 15 秒間隔で送る
@@ -119,9 +130,9 @@ data: {"task_id":"task-20260707-001","acknowledged_at":"..."}
 
 ## 4. event_id 管理（SQLite）
 
-- `events.event_id` は `INTEGER PRIMARY KEY AUTOINCREMENT`。**サーバー全体で単調増加**し、全イベント種別（packet / ack / retry / handoff）で単一の系列を共有する
+- `events.event_id` は `INTEGER PRIMARY KEY AUTOINCREMENT`。**サーバー全体で単調増加**し、全イベント種別（packet / ack / retry_requested）で単一の系列を共有する（ハンドオフパケットも `packet` として同系列に載る）
 - SSE の `id:` と API 応答の `event_id` はこの値
-- クライアントは「最後に処理した event_id」を永続化する（ブラウザは EventSource が自動管理、Python クライアントはローカルファイルに保存）
+- クライアントは「最後に処理した event_id」を永続化する。EventSource の自動 `Last-Event-ID` は**同一ページ内の一時切断にしか効かない**（ページ再読み込み・ブラウザ終了・スマホのタブ破棄では失われる）ため、Web UI も `localStorage` に保存して接続時に `?last_event_id=` を付ける（`clients.md` §2.3）。Python クライアントはローカルファイルに保存する
 
 ## 5. 再接続・再送ロジック（堅牢化の中核）
 
@@ -164,7 +175,7 @@ CREATE TABLE IF NOT EXISTS events (
   event_id   INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id    TEXT NOT NULL,
   event_type TEXT NOT NULL,            -- 'packet' | 'ack' | 'retry_requested'
-  payload    TEXT NOT NULL,            -- 正規化済みパケット全体の JSON
+  payload    TEXT NOT NULL,            -- packet: 正規化済みパケット JSON / ack・retry_requested: server event envelope JSON
   created_at TEXT NOT NULL             -- サーバー受信時刻 (ISO 8601)
 );
 CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id);
@@ -174,7 +185,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   task_type          TEXT,
   intent             TEXT,
   command            TEXT,
-  status             TEXT NOT NULL,    -- protocol.md §7（acknowledged 含む）
+  status             TEXT NOT NULL,    -- protocol.md §7（既読は status ではなく下の acknowledged で管理）
   priority           TEXT,
   summary            TEXT,
   agent_id           TEXT,             -- 最新パケットの from.agent_id
@@ -182,6 +193,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   mood_computed      TEXT,
   requires_user_action INTEGER DEFAULT 0,
   latest_packet      TEXT NOT NULL,    -- 最新パケット JSON（一覧 API はここから返す）
+  acknowledged       INTEGER NOT NULL DEFAULT 0,
   acknowledged_at    TEXT,
   retry_requested_at TEXT,
   created_at         TEXT NOT NULL,
@@ -242,8 +254,10 @@ Web UI は `result.url` が無く `result.path` があるタスクに対し、�
 
 ## 9. 認証・CORS
 
-- 書き込み系（`POST` 全部）: `Authorization: Bearer <MACP_TOKEN>` または `X-MACP-Token: <token>` を要求
+- `MACP_TOKEN` 設定時の保護対象: **`POST` 全部に加え、`GET /api/tasks` / `GET /api/tasks/{task_id}` / `GET /api/artifacts/{task_id}` も保護する**。`Authorization: Bearer <MACP_TOKEN>` または `X-MACP-Token: <token>` を要求
 - `GET /api/stream`: ブラウザの `EventSource` は任意ヘッダを送れないため、**`?token=` クエリを許可**する（LAN 内前提の簡易措置。URL にトークンが残る点は docs に明記し、外部公開しないこと）
+- `GET /`: Web UI 本体（静的 HTML）を返すだけで認証なし。UI 側が API アクセス時にトークン入力を求め、`localStorage` に保存してリクエストに付与する
+- `GET /api/health`: 認証なしで可。ただし詳細情報は返さない（`{"status": "ok"}` のみ。バージョン等の情報は認証付き API 側で返す）
 - `MACP_TOKEN` 未設定時は認証を無効化（ローカル開発用）。バインドが `0.0.0.0` かつトークン未設定の場合は起動時に警告ログを出す
 - CORS: `MACP_CORS_ORIGINS` のオリジンに対して `POST /api/notify` 等を許可（Multi-agent-Platform = `http://localhost:3000` からのブラウザ送信に必須）
 

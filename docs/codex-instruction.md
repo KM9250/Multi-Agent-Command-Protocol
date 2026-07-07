@@ -38,7 +38,10 @@ MACP notify server と最小クライアントの実装指示。本書だけで�
 
 ### Step 1: schemas.py + テスト
 
-- pydantic v2 で `MacpPacket` を定義（`extra="allow"`、enum は `protocol.md` §4–§7）
+- pydantic v2 で `MacpPacket` を定義（`extra="allow"`、enum は `protocol.md` §4–§7。未知 enum の許容は `task_type` / `evaluation.mood` / `actions[].action_type` のみ、`intent` / `status` / `priority` / `to.type` は拒否）
+- **`from` は Python の予約語**のため、`from_: AgentRef = Field(alias="from")` とし、
+  `model_config = ConfigDict(populate_by_name=True, extra="allow")`、シリアライズは `by_alias=True` で
+  **JSON キーは `from` のまま維持**する
 - エイリアス正規化（`/curren-check`→`/review` 等 4 対）と `mood_computed` 導出を純関数で実装
 - `tests/test_schema.py`: **`examples/*.json` 全 5 件をパースして通ること**、必須欠落・範囲外 confidence・
   `handoff_agent` で `handoff` 欠落、の 3 系統が `ValidationError` になること
@@ -52,7 +55,7 @@ MACP notify server と最小クライアントの実装指示。本書だけで�
 ### Step 3: app.py（Phase 1 エンドポイント）
 
 - `POST /api/notify` / `POST /api/handoff` / `GET /api/tasks` / `GET /api/tasks/{id}` / `GET /api/health`
-- トークン認証（`MACP_TOKEN` 未設定なら無効）、CORS（`MACP_CORS_ORIGINS`）
+- トークン認証（`MACP_TOKEN` 未設定なら無効。設定時は POST 全部に加え GET /api/tasks 系・artifacts も保護。`transport.md` §9）、CORS（`MACP_CORS_ORIGINS`）
 - `tests/test_notify_api.py`: FastAPI `TestClient` で正常登録 → 一覧取得 → 詳細取得、401/422 系
 
 **Phase 1 受け入れ**: `uvicorn server.app:app` 起動後、
@@ -70,6 +73,8 @@ MACP notify server と最小クライアントの実装指示。本書だけで�
 - `clients/web/index.html` 1 ファイル（fetch + EventSource、フレームワークなし）
 - `GET /` で配信。`clients.md` §2.2 の項目、`agent_message`→`summary` フォールバック、
   `result.url` → `/api/artifacts/` → path 表示の優先順位
+- 受信した `event_id` を `localStorage` に永続化し、接続時に `?last_event_id=`（+ トークン設定時は `?token=`）を付ける
+  （EventSource の自動 `Last-Event-ID` はページ再読み込みをまたがないため必須）
 - `GET /api/artifacts/{task_id}`: `MACP_ARTIFACT_ROOTS` 許可リスト検証（`Path.resolve` + `is_relative_to`）
 
 **Phase 2 受け入れ**: ブラウザ 2 枚同時受信。片方をネット切断→復帰で取りこぼしゼロ。

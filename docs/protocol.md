@@ -10,7 +10,7 @@ MACP（Multi-Agent Command Protocol）パケットの共通仕様。
 
 1. **すべてのやり取りは 1 つの JSON パケット形式で表す**。人間への通知も AI→AI のハンドオフも同一スキーマ
 2. **パケットは自己完結**。受信側が他の文脈なしに「誰が・何を・どうしたか・次に何が必要か」を判断できる
-3. **前方互換を壊さない**。未知のフィールド・未知の enum 値は受理して保持する（検証エラーにしない）
+3. **前方互換を壊さない**。未知の**フィールド**は受理して保持する。未知の **enum 値**は `task_type` / `evaluation.mood` / `actions[].action_type` に限り前方互換として許容し、制御フローに関わる `intent` / `status` / `priority` / `to.type` は未知値を `422` で拒否する
 4. **サーバー付与情報とエージェント申告情報を区別する**。`event_id` / `received_at` / `mood_computed` はサーバーのみが付与する
 
 ## 2. バージョニング
@@ -98,16 +98,15 @@ MACP（Multi-Agent Command Protocol）パケットの共通仕様。
 | `failed` | 失敗 | エージェント |
 | `blocked` | 外部要因で停止 | エージェント |
 | `need_review` | 人間確認待ち | エージェント |
-| `acknowledged` | ユーザー確認済み | **サーバーのみ**（`POST /api/tasks/{id}/ack` で遷移） |
 
 状態遷移の目安:
 
 ```text
-queued → running → done ────────────┐
-                 → failed ──────────┤→ acknowledged（ack はいずれの終端状態からも可能）
-                 → blocked ─────────┤
-                 → need_review ─────┘
+queued → running → done / failed / blocked / need_review（終端状態）
 ```
+
+**既読（ユーザー確認済み）は `status` では表さない。**
+`POST /api/tasks/{task_id}/ack` は `status` を変更せず、タスクに `acknowledged: true` / `acknowledged_at` を設定する（サーバー管理。一覧・詳細 API の応答に含まれる）。これにより ack 後も元の終端状態（`done` / `failed` など）が一覧上で失われない。
 
 同一 `task_id` に対して複数パケットを送ることで遷移を表す（`running` → `done` など）。
 サーバーは `tasks` テーブルに最新状態を保持し、全パケットを `events` に残す。
@@ -117,7 +116,7 @@ queued → running → done ────────────┐
 サーバー（`schemas.py` / pydantic）は以下を検証する。
 
 1. **必須フィールド**: §3 の必須列（✔）が揃っていること
-2. **型と enum**: `intent` / `status` / `priority` / `to.type` は定義済みの値のみ。`task_type` と `mood` は未知値も受理
+2. **型と enum**: 制御フローに関わる `intent` / `status` / `priority` / `to.type` は定義済みの値のみ（未知値は `422`）。`task_type` / `evaluation.mood` / `actions[].action_type` は未知値も受理する（前方互換。警告ログのみ）
 3. **バージョン**: `protocol == "macp"` かつメジャーバージョン一致
 4. **数値範囲**: `evaluation.confidence` / `evaluation.requirement_satisfaction` は 0.0–1.0
 5. **条件付き必須**: `intent == "handoff_agent"` なら `handoff` オブジェクト必須（`handoff.md` §3 の必須フィールドを含む）

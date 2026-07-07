@@ -25,7 +25,7 @@ Windows 通知クライアント・Web UI・Android の設計。Android の詳�
 一覧（タスクカード）:
 
 - `summary`（タイトル行）、`agent_message`（本文。欠落時は `summary` のみ）
-- `status` バッジ、`mood` バッジ（申告値。`mood_computed` と矛盾時は両方表示）
+- `status` バッジ、`mood` バッジ（既知の申告値は表示し、`mood_computed` と矛盾時は両方表示。**未知の申告値のときは `mood_computed` を主表示とし、申告値は詳細ビューに raw value として表示**）
 - `task_type` / `command` / `from.agent_id`
 - `confidence`、`requires_user_action`（要対応マーク）
 - ack 済みかどうか（既読表示）
@@ -47,9 +47,9 @@ Windows 通知クライアント・Web UI・Android の設計。Android の詳�
 
 ### 2.3 受信方式
 
-- `EventSource` で `/api/stream` を購読（`Last-Event-ID` はブラウザが自動送信するため再送は自動で機能する）
+- `EventSource` で `/api/stream` を購読。ただしブラウザ自動送信の `Last-Event-ID` は**同一接続の一時切断にしか効かず**、ページ再読み込み・ブラウザ終了・スマホのタブ破棄をまたぐと失われる。そのため **受信した `event_id` を `localStorage` に保存し、接続時に必ず `?last_event_id=` を付ける**（ヘッダとクエリ併存時はヘッダ優先のため二重送信しても安全）
 - 初期表示は `GET /api/tasks` で取得し、以降 SSE 差分で更新
-- `MACP_TOKEN` 設定時は `/api/stream?token=` を使用
+- `MACP_TOKEN` 設定時は初回にトークン入力を求めて `localStorage` に保存し、API 呼び出しにはヘッダで、`/api/stream` には `?token=` で付与する
 - **ブラウザの Notification API は HTTPS（secure context）必須**のため、LAN 内 HTTP 運用では**ページ内の一覧更新・バッジ表示まで**とする。ページタイトルへの未読数表示（`(3) MACP`）で代替する
 
 ## 3. Windows 通知クライアント（`clients/windows/notify_receiver.py`）
@@ -74,7 +74,7 @@ Windows 通知クライアント・Web UI・Android の設計。Android の詳�
 - 表示フィルタ:
   - `intent: log_only` は表示しない
   - `to.type == "agent"`（ハンドオフ・返却）は既定で表示しない（`--show-agent-events` で有効化）
-  - `event: ack` / `event: retry` は表示しない（Web UI 側の関心事）
+  - `event: ack` / `event: retry_requested` は表示しない（Web UI 側の関心事）
 - 自動起動: Windows の「スタートアップ」フォルダまたはタスクスケジューラ登録（手順は `clients/windows/README.md` に記載）
 
 ## 4. Android（`clients/android/`）
@@ -97,5 +97,5 @@ Windows 通知クライアント・Web UI・Android の設計。Android の詳�
 1. 未知のフィールド・未知の `action_type` は無視する（前方互換）
 2. `agent_message` 欠落時は `summary` にフォールバック
 3. `result.url` → `/api/artifacts/{task_id}` → `path` 文字列表示、の優先順位（`notification-packet.md` §3）
-4. `last_event_id` の永続化と `Last-Event-ID` 付き再接続を必ず実装する（Web UI はブラウザ任せでよい）
+4. `last_event_id` の永続化と再送カーソル付き再接続を必ず実装する（**Web UI もブラウザ任せにせず** `localStorage` + `?last_event_id=` を実装する）
 5. 表示抑制はクライアント側の責務（サーバーは全イベントを配信する）

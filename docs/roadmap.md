@@ -18,7 +18,8 @@
 - SQLite（events / tasks / handoffs）+ JSONL 監査ログ
 - `GET /api/tasks` / `GET /api/tasks/{task_id}` / `GET /api/health`
 - `POST /api/handoff`（記録のみ）
-- トークン認証・CORS
+- トークン認証（設定時は GET 系 API も保護）・CORS
+- JSON Schema / TypeScript 型定義の生成・配布（pydantic モデルから生成。Multi-agent-Platform 等の接続クライアント向け）
 - テスト: `tests/test_schema.py`（examples 全件の検証）、`tests/test_notify_api.py`
 
 **完了条件**: `curl` で `examples/notify_done.json` を POST し、`GET /api/tasks` で確認できる。テストが通る。

@@ -59,8 +59,8 @@ Multi-Agent Command Protocol（以下 **MACP**）の要件定義。
 
 ### 4.3 履歴・状態管理
 - 全パケットを SQLite に保存し、JSONL に生パケットを追記（監査ログ）
-- タスク状態: `queued` / `running` / `done` / `failed` / `blocked` / `need_review` / `acknowledged`
-- `acknowledged` はサーバー管理の状態であり、エージェントは送信しない
+- タスク状態: `queued` / `running` / `done` / `failed` / `blocked` / `need_review`
+- 既読（acknowledged）は `status` とは**独立のサーバー管理フラグ**（`acknowledged` / `acknowledged_at`）として保持する。ack しても元の終端状態（`done` / `failed` 等）は一覧上で失われない
 
 ### 4.4 ack / retry
 - `POST /api/tasks/{task_id}/ack`: ユーザーが確認済みにする
@@ -125,7 +125,7 @@ Multi-Agent Command Protocol（以下 **MACP**）の要件定義。
 | 5 | ハンドオフ | 仕様は Phase 0 で固定、実装は Phase 5。`POST /api/handoff` は Phase 1 から記録のみで先置き |
 | 6 | コマンド名 | 汎用名（`/review` `/polish` `/triage` `/spec`）を正準とし、`/curren-check` 等は**エイリアス**。パケットには正準名を格納、`command_alias` に入力表記を保持 |
 | 7 | 人格通知文 | `summary` / `requirement_summary` / `agent_message` の3フィールド分離までをプロトコルに含め、人格文の生成規則はエージェント側の責務。`agent_message` 欠落時は UI が `summary` にフォールバック |
-| 8 | multi-agent-platform 等との接続 | **疎結合**。platform / harness 側は MACP のクライアントであり `POST /api/notify` にパケットを投げる。MACP は JSON Schema と TypeScript 型定義を配布。具体的な接続設計は別タスク |
+| 8 | multi-agent-platform 等との接続 | **疎結合**。platform / harness 側は MACP のクライアントであり `POST /api/notify` にパケットを投げる。MACP は JSON Schema と TypeScript 型定義を配布する（**実ファイルは Phase 1 で pydantic モデルから生成・配布予定**）。具体的な接続設計は別タスク |
 | 9 | retry の意味 | 再実行**要求**の記録・配信。サーバーは AI タスクを実行しない |
 | 10 | 成果物アクセス | `result.path`（PC ローカル）と `result.url`（リモート参照）を分離。Phase 2 で `GET /api/artifacts/{task_id}` を任意機能として追加 |
 | 11 | mood 判定 | 申告任意、未指定時サーバー導出。矛盾時は申告値と `mood_computed` を併記 |
@@ -133,6 +133,7 @@ Multi-Agent Command Protocol（以下 **MACP**）の要件定義。
 | 13 | 実行環境 | Python 3.11+ / Windows / uvicorn 直接起動 / FastAPI・uvicorn・pydantic 最小依存 |
 | 14 | ドキュメント言語 | docs 一式は日本語主体、README のみ日英併記 |
 | 15 | Windows 通知の位置づけ | **Phase 2.5「Windows 通知復旧・参考実装」**として扱う（過去に動作実績があり、Android より検証が容易なため疎通確認の基準実装とする） |
+| 16 | PR #1 レビュー反映 | 未知 enum の許容は `task_type` / `evaluation.mood` / `action_type` に限定し、`intent` / `status` / `priority` / `to.type` の未知値は 422 で拒否。既読は `status` と独立の `acknowledged` フラグで管理。retry イベント名は `retry_requested` に統一し、payload は MACP パケットと分離した server event envelope とする。`MACP_TOKEN` 設定時は GET 系 API も保護。Web UI も `last_event_id` を `localStorage` に永続化 |
 
 ## 8. 関連ドキュメント
 

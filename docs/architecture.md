@@ -91,7 +91,7 @@
 
 ```text
 ack:   ユーザー操作 → POST /api/tasks/{id}/ack
-       → tasks.status = acknowledged, ack イベントを events に追記 → SSE 配信
+       → tasks.acknowledged = true（status は元の終端状態を維持）, ack イベントを events に追記 → SSE 配信
 retry: ユーザー操作 → POST /api/tasks/{id}/retry
        → retry_requested イベントを events に追記（宛先 = 元パケットの from.agent_id）
        → SSE 配信。実行はエージェント側の責務（サーバーは AI を実行しない）
@@ -105,7 +105,7 @@ retry: ユーザー操作 → POST /api/tasks/{id}/retry
 
 - Platform（ブラウザ完結の React アプリ）は MACP の**クライアント**であり、`fetch` で `POST /api/notify` にパケットを送るだけ
 - 送信元がブラウザであるため、MACP サーバーは **CORS 許可リスト**（既定: `http://localhost:3000`）を持つ
-- MACP は `docs/` の JSON Schema と、将来的に TypeScript 型定義（`.d.ts`）を配布し、Platform 側はそれをインポートして検証する
+- MACP は JSON Schema と TypeScript 型定義（`.d.ts`）を配布する予定である（**現時点で実ファイルはなく、Phase 1 で pydantic モデルから生成・配布する**）。Platform 側はそれをインポートして検証する
 - Platform 内のハンドオフ概念と MACP `handoff` フィールドのマッピングは、Platform 側リポジトリでの別タスクとして扱う
 
 ## 7. 最小実装と将来拡張の切り分け

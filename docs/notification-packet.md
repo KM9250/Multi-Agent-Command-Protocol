@@ -99,7 +99,7 @@
 | `ack` | `POST /api/tasks/{task_id}/ack` を呼ぶ | 全端末 |
 | `retry` | `POST /api/tasks/{task_id}/retry` を呼ぶ | 全端末 |
 
-クライアントは未知の `action_type` を無視してよい（表示しない）。
+サーバーは未知の `action_type` を受理する（前方互換）。クライアントは未知の `action_type` を無視してよい（表示しない）。
 
 ## 6. `mood` と導出規則
 
@@ -119,6 +119,7 @@
 - サーバーは受信時に必ず `mood_computed` を以下の規則で導出し、パケットに付与する
 - 申告値がない場合、UI は `mood_computed` を表示する
 - 申告値があり `mood_computed` と**矛盾する場合は両方を併記**する（例: バッジは申告値、ツールチップ/詳細に `computed: caution`）
+- 申告値が**未知の enum 値**の場合（前方互換で受理される。`protocol.md` §8）、UI は `mood_computed` を主表示とし、未知の申告値は詳細欄に raw value として表示する
 
 導出規則（上から順に評価し、最初に一致した行を採用）:
 
