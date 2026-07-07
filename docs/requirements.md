@@ -147,4 +147,5 @@ Multi-Agent Command Protocol（以下 **MACP**）の要件定義。
 | [`clients.md`](./clients.md) | クライアント設計（§18.4） |
 | [`android-client-notes.md`](./android-client-notes.md) | Android 側の注意点 |
 | [`roadmap.md`](./roadmap.md) | 実装ロードマップ（§18.5） |
-| [`codex-instruction.md`](./codex-instruction.md) | Codex 向け実装指示書（§18.6） |
+| [`codex-instruction.md`](./codex-instruction.md) | Codex 向け実装指示書・全体像（§18.6） |
+| [`codex-phase1-instruction.md`](./codex-phase1-instruction.md) | Codex 向け Phase 1 開発指示書（実行用） |

@@ -1,7 +1,10 @@
-# Codex 向け実装指示書（Phase 1–2.5）
+# Codex 向け実装指示書（Phase 1–2.5 全体像）
 
 MACP notify server と最小クライアントの実装指示。本書だけで着手できるよう書くが、
 仕様の正は `docs/` 各書とし、矛盾があれば **docs 側を優先**して本書を修正すること。
+
+> **Phase 1 の実行用指示書は [`codex-phase1-instruction.md`](./codex-phase1-instruction.md) を使うこと。**
+> 本書は Phase 1–2.5 の全体像と Phase 2 以降の参照用。
 
 ## 0. 前提・制約
 

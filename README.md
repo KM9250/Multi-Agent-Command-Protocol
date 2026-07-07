@@ -47,7 +47,8 @@
 | [`docs/clients.md`](./docs/clients.md) | クライアント設計（Windows / Web / Android） |
 | [`docs/android-client-notes.md`](./docs/android-client-notes.md) | Android 側の注意点 |
 | [`docs/roadmap.md`](./docs/roadmap.md) | 実装ロードマップ（Phase 0〜6） |
-| [`docs/codex-instruction.md`](./docs/codex-instruction.md) | Codex 向け実装指示書 |
+| [`docs/codex-instruction.md`](./docs/codex-instruction.md) | Codex 向け実装指示書（全体像） |
+| [`docs/codex-phase1-instruction.md`](./docs/codex-phase1-instruction.md) | Codex 向け Phase 1 開発指示書（実行用） |
 
 ### パケット例
 
