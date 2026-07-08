@@ -113,6 +113,10 @@ class Store:
         ).fetchall()
         return [self._event(row) for row in rows]
 
+    def get_max_event_id(self) -> int:
+        row = self._conn.execute("SELECT COALESCE(MAX(event_id), 0) AS max_id FROM events").fetchone()
+        return int(row["max_id"])
+
     def list_tasks(self, *, status=None, task_type=None, intent=None, acknowledged=None, limit=50, offset=0) -> list[dict]:
         clauses, params = [], []
         for col, val in (("status", status), ("task_type", task_type), ("intent", intent)):

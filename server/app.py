@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -8,10 +10,10 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
-from .config import Settings, get_settings
+from .config import get_settings
 from .event_bus import EventBus
 from .schemas import MacpPacket, normalize_packet
 from .store import Store
@@ -31,7 +33,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),
     allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "X-MACP-Token", "Content-Type"],
+    allow_headers=["Authorization", "X-MACP-Token", "Content-Type", "Last-Event-ID"],
 )
 app.state.settings = settings
 app.state.store = Store(settings.db_path, settings.jsonl_path)
@@ -77,6 +79,12 @@ async def unhandled_handler(request: Request, exc: Exception):
     return error_response("internal_error", "Internal server error", 500)
 
 
+def _bearer_token(authorization: str | None) -> str | None:
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.removeprefix("Bearer ")
+    return None
+
+
 def require_auth(
     request: Request,
     authorization: str | None = Header(default=None),
@@ -85,11 +93,90 @@ def require_auth(
     token = request.app.state.settings.token
     if not token:
         return
-    supplied = x_macp_token
-    if authorization and authorization.startswith("Bearer "):
-        supplied = authorization.removeprefix("Bearer ")
+    supplied = _bearer_token(authorization) or x_macp_token
     if supplied != token:
         raise HTTPException(status_code=401)
+
+
+def require_stream_auth(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_macp_token: str | None = Header(default=None),
+    token_query: str | None = Query(default=None, alias="token"),
+):
+    token = request.app.state.settings.token
+    if not token:
+        return
+    supplied = _bearer_token(authorization) or x_macp_token or token_query
+    if supplied != token:
+        raise HTTPException(status_code=401)
+
+
+
+def parse_last_event_id(header_value: str | None, query_value: str | None) -> int | None:
+    raw = header_value if header_value not in (None, "") else query_value
+    if raw in (None, ""):
+        return None
+    try:
+        last_event_id = int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="last_event_id must be a non-negative integer")
+    if last_event_id < 0:
+        raise HTTPException(status_code=422, detail="last_event_id must be a non-negative integer")
+    return last_event_id
+
+
+def packet_event(event_id: int, normalized: dict) -> dict:
+    return {
+        "event_id": event_id,
+        "event_type": "packet",
+        "task_id": normalized["task_id"],
+        "created_at": normalized["received_at"],
+        "payload": normalized,
+    }
+
+
+def format_sse(event: dict) -> str:
+    event_id = int(event["event_id"])
+    event_type = event.get("event_type", "packet")
+    payload = event["payload"]
+    if event_type == "packet":
+        data = dict(payload)
+        data["event_id"] = event_id
+    else:
+        data = dict(payload)
+        data.setdefault("event_id", event_id)
+        data.setdefault("event_type", event_type)
+    data_json = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"id: {event_id}\n" f"event: {event_type}\n" f"data: {data_json}\n\n"
+
+
+async def event_generator(request: Request, store: Store, bus: EventBus, last_id: int | None):
+    queue = bus.subscribe()
+    cursor = last_id if last_id is not None else store.get_max_event_id()
+    try:
+        if last_id is not None:
+            for event in store.get_events_after(last_id):
+                if await request.is_disconnected():
+                    return
+                yield format_sse(event)
+                cursor = max(cursor, int(event["event_id"]))
+
+        while True:
+            if await request.is_disconnected():
+                return
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=15)
+            except asyncio.TimeoutError:
+                yield ": ping\n\n"
+                continue
+            event_id = int(event["event_id"])
+            if event_id <= cursor:
+                continue
+            yield format_sse(event)
+            cursor = event_id
+    finally:
+        bus.unsubscribe(queue)
 
 
 def get_store(request: Request) -> Store:
@@ -108,7 +195,7 @@ async def notify(packet: MacpPacket, request: Request, store: Store = Depends(ge
     event_id = store.append_packet(normalized, raw)
     normalized["event_id"] = event_id
     logger.info("received task_id=%s intent=%s status=%s mood_computed=%s summary=%s", normalized.get("task_id"), normalized.get("intent"), normalized.get("status"), normalized.get("mood_computed"), normalized.get("summary"))
-    await request.app.state.bus.publish(normalized)
+    await request.app.state.bus.publish(packet_event(event_id, normalized))
     return {"ok": True, "event_id": event_id, "task_id": normalized["task_id"], "mood_computed": normalized["mood_computed"]}
 
 
@@ -120,8 +207,27 @@ async def handoff(packet: MacpPacket, request: Request, store: Store = Depends(g
     normalized = normalize_packet(packet)
     event_id = store.append_packet(normalized, raw)
     normalized["event_id"] = event_id
-    await request.app.state.bus.publish(normalized)
+    await request.app.state.bus.publish(packet_event(event_id, normalized))
     return {"ok": True, "event_id": event_id, "handoff_id": normalized["handoff"]["handoff_id"], "state": "pending"}
+
+
+@app.get("/api/stream", dependencies=[Depends(require_stream_auth)])
+async def stream(
+    request: Request,
+    store: Store = Depends(get_store),
+    last_event_id: str | None = Query(default=None),
+    last_event_id_header: str | None = Header(default=None, alias="Last-Event-ID"),
+):
+    last_id = parse_last_event_id(last_event_id_header, last_event_id)
+    return StreamingResponse(
+        event_generator(request, store, request.app.state.bus, last_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/tasks", dependencies=[Depends(require_auth)])

@@ -31,3 +31,55 @@ With a token:
 curl -s -H "Authorization: Bearer $MACP_TOKEN" http://127.0.0.1:8765/api/tasks
 curl -s -H "X-MACP-Token: $MACP_TOKEN" http://127.0.0.1:8765/api/tasks
 ```
+
+## SSE stream
+
+Replay stored packet events from the beginning:
+
+```bash
+curl -N "http://127.0.0.1:8765/api/stream?last_event_id=0"
+```
+
+Connect with an EventSource-compatible query token when `MACP_TOKEN` is set:
+
+```bash
+curl -N "http://127.0.0.1:8765/api/stream?last_event_id=0&token=$MACP_TOKEN"
+```
+
+Manual live-delivery check:
+
+Terminal A:
+
+```bash
+uvicorn server.app:app --host 127.0.0.1 --port 8765
+```
+
+Terminal B:
+
+```bash
+curl -N "http://127.0.0.1:8765/api/stream?last_event_id=0"
+```
+
+Terminal C:
+
+```bash
+curl -s -X POST http://127.0.0.1:8765/api/notify \
+  -H "Content-Type: application/json" \
+  -d @examples/notify_done.json
+```
+
+Terminal B should receive a packet event similar to:
+
+```text
+id: 1
+event: packet
+data: {"protocol":"macp",...,"event_id":1,...}
+
+```
+
+When no events are available for 15 seconds, the stream sends a heartbeat comment:
+
+```text
+: ping
+
+```
