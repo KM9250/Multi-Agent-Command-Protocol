@@ -40,6 +40,12 @@ Replay stored packet events from the beginning:
 curl -N "http://127.0.0.1:8765/api/stream?last_event_id=0"
 ```
 
+Replay events after a stored cursor with the `Last-Event-ID` header:
+
+```bash
+curl -N -H "Last-Event-ID: 41" "http://127.0.0.1:8765/api/stream"
+```
+
 Connect with an EventSource-compatible query token when `MACP_TOKEN` is set:
 
 ```bash
