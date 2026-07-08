@@ -89,3 +89,10 @@ When no events are available for 15 seconds, the stream sends a heartbeat commen
 : ping
 
 ```
+
+## Phase 2-A summary
+
+- Added `GET /api/stream` SSE endpoint.
+- Added `Last-Event-ID` / `?last_event_id=` support.
+- Added `?token=` support for EventSource.
+- Added heartbeat and backlog replay tests.
