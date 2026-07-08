@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MACP Notify</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #f6f7fb; --card: #fff; --text: #172033; --muted: #667085; --line: #d8deea; --accent: #2563eb; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #10141f; --card: #171d2b; --text: #eef2ff; --muted: #a8b3cf; --line: #2a3448; --accent: #7aa2ff; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.45; }
+    .page { max-width: 900px; margin: 0 auto; padding: 12px; }
+    header { position: sticky; top: 0; z-index: 2; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+    .header-inner { max-width: 900px; margin: 0 auto; padding: 12px; display: grid; gap: 10px; }
+    h1 { margin: 0; font-size: 1.35rem; }
+    .toolbar, .filters, .meta-row, .badges { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button, input, select { min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--card); color: var(--text); font: inherit; }
+    button { cursor: pointer; font-weight: 650; }
+    button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+    input[type="search"] { flex: 1 1 220px; }
+    .status { font-weight: 700; }
+    .status.connected { color: #138a43; } .status.connecting { color: #a16207; } .status.error, .status.disconnected, .status.auth-required { color: #c2410c; }
+    .count { border-radius: 999px; padding: 4px 8px; background: var(--card); border: 1px solid var(--line); font-weight: 700; }
+    main { padding-top: 14px; }
+    .empty { color: var(--muted); padding: 28px 8px; text-align: center; }
+    .task-list { display: grid; gap: 12px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06); overflow-wrap: anywhere; }
+    .card.unread { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent); }
+    .card h2 { margin: 0 0 8px; font-size: 1.05rem; }
+    .message, .detail { color: var(--muted); white-space: pre-wrap; }
+    .badge { display: inline-flex; align-items: center; min-height: 26px; border-radius: 999px; padding: 3px 8px; font-size: 0.85rem; font-weight: 700; background: #e8eefc; color: #1d4ed8; }
+    .mood-good { background: #dcfce7; color: #166534; } .mood-caution { background: #fef3c7; color: #92400e; }
+    .mood-bad { background: #fee2e2; color: #991b1b; } .mood-blocked { background: #ede9fe; color: #5b21b6; } .mood-unknown { background: #e5e7eb; color: #374151; }
+    details { margin-top: 10px; }
+    summary { cursor: pointer; font-weight: 700; }
+    pre { max-width: 100%; overflow-x: auto; border-radius: 12px; border: 1px solid var(--line); padding: 10px; background: color-mix(in srgb, var(--bg) 80%, var(--card)); }
+    a { color: var(--accent); word-break: break-all; }
+    dialog { border: 1px solid var(--line); border-radius: 16px; padding: 0; background: var(--card); color: var(--text); width: min(92vw, 420px); }
+    dialog::backdrop { background: rgba(15, 23, 42, 0.55); }
+    .dialog-body { padding: 18px; display: grid; gap: 10px; }
+    .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+    @media (max-width: 600px) { .toolbar > button, .toolbar > .count, .filters > * { flex: 1 1 100%; } .page, .header-inner { padding: 10px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="toolbar">
+        <h1>MACP Notify</h1>
+        <span id="connectionStatus" class="status disconnected">disconnected</span>
+        <span id="unreadCount" class="count">Unread: 0</span>
+        <button id="tokenButton" type="button">Token</button>
+        <button id="reconnectButton" type="button">Reconnect</button>
+        <button id="reloadButton" type="button">Reload</button>
+      </div>
+      <div class="filters" aria-label="Filters">
+        <select id="statusFilter" aria-label="Status filter"><option value="">All status</option></select>
+        <input id="typeFilter" type="search" placeholder="task_type filter" aria-label="Task type filter">
+        <label><input id="unreadOnly" type="checkbox"> unread only</label>
+        <label><input id="actionOnly" type="checkbox"> requires action</label>
+        <input id="searchFilter" type="search" placeholder="Search summary / agent / task id" aria-label="Free text search">
+      </div>
+    </div>
+  </header>
+  <main class="page">
+    <div id="taskList" class="task-list" aria-live="polite"></div>
+    <p id="emptyState" class="empty">No tasks yet.</p>
+  </main>
+  <dialog id="tokenDialog">
+    <form method="dialog" class="dialog-body">
+      <h2>MACP token</h2>
+      <p class="message">Token is stored locally in this browser and sent to APIs as a Bearer token. SSE uses the token query parameter for EventSource compatibility.</p>
+      <input id="tokenInput" type="password" autocomplete="off" placeholder="MACP_TOKEN">
+      <div class="dialog-actions">
+        <button id="clearTokenButton" type="button">Delete</button>
+        <button value="cancel" type="submit">Cancel</button>
+        <button id="saveTokenButton" class="primary" type="button">Save and reconnect</button>
+      </div>
+    </form>
+  </dialog>
+  <script>
+    const STORAGE_KEYS = { token: "macp_token", lastEventId: "macp_last_event_id", unread: "macp_unread_task_ids" };
+    const KNOWN_MOODS = new Set(["good", "caution", "bad", "blocked", "unknown"]);
+    const state = {
+      token: localStorage.getItem(STORAGE_KEYS.token) || "",
+      lastEventId: Number(localStorage.getItem(STORAGE_KEYS.lastEventId) || "0"),
+      tasks: new Map(),
+      eventSource: null,
+      connected: false,
+      unreadTaskIds: new Set(JSON.parse(localStorage.getItem(STORAGE_KEYS.unread) || "[]")),
+    };
+    const el = {
+      status: document.getElementById("connectionStatus"), unread: document.getElementById("unreadCount"), list: document.getElementById("taskList"), empty: document.getElementById("emptyState"),
+      tokenButton: document.getElementById("tokenButton"), reconnectButton: document.getElementById("reconnectButton"), reloadButton: document.getElementById("reloadButton"), dialog: document.getElementById("tokenDialog"), tokenInput: document.getElementById("tokenInput"), saveToken: document.getElementById("saveTokenButton"), clearToken: document.getElementById("clearTokenButton"),
+      statusFilter: document.getElementById("statusFilter"), typeFilter: document.getElementById("typeFilter"), unreadOnly: document.getElementById("unreadOnly"), actionOnly: document.getElementById("actionOnly"), searchFilter: document.getElementById("searchFilter"),
+    };
+    ["", "queued", "running", "done", "failed", "blocked", "need_review"].forEach((value) => { if (!value) return; const option = document.createElement("option"); option.value = value; option.textContent = value; el.statusFilter.append(option); });
+    function setStatus(value) { el.status.textContent = value; el.status.className = `status ${value.replace(/\s+/g, "-")}`; }
+    function saveUnread() { localStorage.setItem(STORAGE_KEYS.unread, JSON.stringify([...state.unreadTaskIds])); }
+    function updateTitle() { const count = state.unreadTaskIds.size; document.title = count > 0 ? `(${count}) MACP Notify` : "MACP Notify"; el.unread.textContent = `Unread: ${count}`; }
+    function showTokenDialog() { el.tokenInput.value = state.token ? "" : ""; if (typeof el.dialog.showModal === "function") el.dialog.showModal(); else el.dialog.setAttribute("open", ""); }
+    async function apiFetch(path, options = {}) { const headers = new Headers(options.headers || {}); if (state.token) headers.set("Authorization", `Bearer ${state.token}`); const response = await fetch(path, { ...options, headers }); if (response.status === 401) { setStatus("auth required"); showTokenDialog(); throw new Error("Unauthorized"); } if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); }
+    async function loadTasks() { try { const data = await apiFetch("/api/tasks?limit=200"); state.tasks.clear(); for (const task of data.tasks || []) upsertTaskFromApi(task); render(); } catch (error) { console.warn(error); } }
+    function upsertTaskFromApi(row) { const packet = row.latest_packet || row; const taskId = row.task_id || packet.task_id; if (taskId) state.tasks.set(taskId, { row, packet }); }
+    function buildStreamUrl() { const params = new URLSearchParams(); params.set("last_event_id", String(state.lastEventId || 0)); if (state.token) params.set("token", state.token); return `/api/stream?${params.toString()}`; }
+    function connectStream() { if (state.eventSource) state.eventSource.close(); setStatus("connecting"); const es = new EventSource(buildStreamUrl()); state.eventSource = es; es.onopen = () => { state.connected = true; setStatus("connected"); }; es.onerror = () => { state.connected = false; setStatus("error reconnecting"); }; es.addEventListener("packet", handlePacketEvent); es.addEventListener("ack", () => {}); es.addEventListener("retry_requested", () => {}); }
+    function handlePacketEvent(event) { const packet = JSON.parse(event.data); const eventId = Number(event.lastEventId || packet.event_id || 0); if (eventId > 0) { state.lastEventId = Math.max(state.lastEventId || 0, eventId); localStorage.setItem(STORAGE_KEYS.lastEventId, String(state.lastEventId)); } const taskId = packet.task_id; const existing = state.tasks.get(taskId) || {}; state.tasks.set(taskId, { row: { ...(existing.row || {}), task_id: taskId, latest_packet: packet, status: packet.status, task_type: packet.task_type, intent: packet.intent, command: packet.command, priority: packet.priority, summary: packet.summary, mood_computed: packet.mood_computed, updated_at: packet.received_at || packet.created_at, acknowledged: false }, packet }); state.unreadTaskIds.add(taskId); saveUnread(); render(); }
+    function markRead(taskId) { state.unreadTaskIds.delete(taskId); saveUnread(); render(); }
+    function safeUrl(value) { try { const url = new URL(value, window.location.href); if (!["http:", "https:"].includes(url.protocol)) return null; return url.href; } catch { return null; } }
+    function text(tag, value, className) { const node = document.createElement(tag); if (className) node.className = className; node.textContent = value == null || value === "" ? "-" : String(value); return node; }
+    function badge(value, className) { const span = text("span", value, `badge ${className || ""}`.trim()); return span; }
+    function moodInfo(packet) { const reported = packet.evaluation && packet.evaluation.mood; const computed = packet.mood_computed || "unknown"; const primary = KNOWN_MOODS.has(computed) ? computed : "unknown"; let label = primary; if (reported && reported !== computed) label += KNOWN_MOODS.has(reported) ? ` (reported: ${reported})` : " (raw mood in details)"; return { label, className: `mood-${primary}` }; }
+    function searchable(item) { const packet = item.packet || {}; const row = item.row || {}; const from = packet.from || {}; return [packet.summary, packet.agent_message, packet.task_id || row.task_id, from.agent_id].join(" ").toLowerCase(); }
+    function filteredItems() { const status = el.statusFilter.value; const type = el.typeFilter.value.trim().toLowerCase(); const query = el.searchFilter.value.trim().toLowerCase(); return [...state.tasks.values()].filter((item) => { const packet = item.packet || {}; const row = item.row || {}; if (status && (row.status || packet.status) !== status) return false; if (type && !String(row.task_type || packet.task_type || "").toLowerCase().includes(type)) return false; if (el.unreadOnly.checked && !state.unreadTaskIds.has(row.task_id || packet.task_id)) return false; if (el.actionOnly.checked && !(packet.evaluation && packet.evaluation.requires_user_action)) return false; if (query && !searchable(item).includes(query)) return false; return true; }).sort((a, b) => String((b.row || {}).updated_at || (b.packet || {}).received_at || "").localeCompare(String((a.row || {}).updated_at || (a.packet || {}).received_at || ""))); }
+    function appendMeta(container, label, value) { container.append(badge(`${label}: ${value == null || value === "" ? "-" : value}`)); }
+    function renderDetail(details, item) { const packet = item.packet || {}; const result = packet.result || {}; const actions = packet.actions || []; details.append(text("p", packet.requirement_summary || "", "detail")); details.append(text("p", packet.detail || "", "detail")); if (result.url) { const href = safeUrl(result.url); const p = document.createElement("p"); p.append(text("strong", "result.url: ")); if (href) { const a = document.createElement("a"); a.href = href; a.rel = "noopener noreferrer"; a.target = "_blank"; a.textContent = href; p.append(a); } else p.append(text("span", result.url)); details.append(p); } if (result.path) details.append(text("p", `result.path: ${result.path}`)); if (actions.length) details.append(text("p", `actions: ${actions.map((a) => `${a.label || "action"} (${a.action_type || "unknown"})`).join(", ")}`)); if (packet.evaluation && packet.evaluation.mood && !KNOWN_MOODS.has(packet.evaluation.mood)) details.append(text("p", `raw mood: ${packet.evaluation.mood}`)); const pre = document.createElement("pre"); pre.textContent = JSON.stringify({ task_id: packet.task_id, evaluation: packet.evaluation || null, latest_packet: packet }, null, 2); details.append(pre); }
+    function renderCard(item) { const packet = item.packet || {}; const row = item.row || {}; const taskId = row.task_id || packet.task_id; const card = document.createElement("article"); card.className = `card ${state.unreadTaskIds.has(taskId) ? "unread" : ""}`; const title = text("h2", packet.summary || row.summary || taskId); card.append(title); if (packet.agent_message) card.append(text("p", packet.agent_message, "message")); const badges = document.createElement("div"); badges.className = "badges"; const mood = moodInfo(packet); badges.append(badge(row.status || packet.status, ""), badge(mood.label, mood.className)); appendMeta(badges, "type", row.task_type || packet.task_type); appendMeta(badges, "command", row.command || packet.command); appendMeta(badges, "from", (packet.from || {}).agent_id); appendMeta(badges, "confidence", packet.evaluation && packet.evaluation.confidence); appendMeta(badges, "action", packet.evaluation && packet.evaluation.requires_user_action ? "yes" : "no"); appendMeta(badges, "priority", row.priority || packet.priority); appendMeta(badges, "local read", state.unreadTaskIds.has(taskId) ? "no" : "yes"); appendMeta(badges, "ack", row.acknowledged ? "yes" : "no"); card.append(badges); card.append(text("p", row.updated_at || packet.received_at || packet.created_at, "message")); const details = document.createElement("details"); const summary = text("summary", `Details: ${taskId}`); details.append(summary); details.addEventListener("toggle", () => { if (details.open) markRead(taskId); }); renderDetail(details, item); card.append(details); const readButton = document.createElement("button"); readButton.type = "button"; readButton.textContent = "Mark local read"; readButton.addEventListener("click", () => markRead(taskId)); card.append(readButton); return card; }
+    function render() { el.list.replaceChildren(); const items = filteredItems(); for (const item of items) el.list.append(renderCard(item)); el.empty.hidden = items.length !== 0; updateTitle(); }
+    function saveToken() { state.token = el.tokenInput.value.trim(); if (state.token) localStorage.setItem(STORAGE_KEYS.token, state.token); else localStorage.removeItem(STORAGE_KEYS.token); el.dialog.close(); loadTasks(); connectStream(); }
+    function clearToken() { state.token = ""; localStorage.removeItem(STORAGE_KEYS.token); el.tokenInput.value = ""; el.dialog.close(); connectStream(); }
+    el.tokenButton.addEventListener("click", showTokenDialog); el.reconnectButton.addEventListener("click", connectStream); el.reloadButton.addEventListener("click", loadTasks); el.saveToken.addEventListener("click", saveToken); el.clearToken.addEventListener("click", clearToken); [el.statusFilter, el.typeFilter, el.unreadOnly, el.actionOnly, el.searchFilter].forEach((node) => node.addEventListener("input", render));
+    setStatus("disconnected"); updateTitle(); loadTasks().finally(connectStream);
+  </script>
+</body>
+</html>
