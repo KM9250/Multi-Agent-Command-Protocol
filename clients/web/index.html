@@ -80,10 +80,12 @@
   </dialog>
   <script>
     const STORAGE_KEYS = { token: "macp_token", lastEventId: "macp_last_event_id", unread: "macp_unread_task_ids" };
+    const storedLastEventId = localStorage.getItem(STORAGE_KEYS.lastEventId);
     const KNOWN_MOODS = new Set(["good", "caution", "bad", "blocked", "unknown"]);
     const state = {
       token: localStorage.getItem(STORAGE_KEYS.token) || "",
-      lastEventId: Number(localStorage.getItem(STORAGE_KEYS.lastEventId) || "0"),
+      lastEventId: Number(storedLastEventId || "0"),
+      hasStoredCursor: storedLastEventId !== null,
       tasks: new Map(),
       eventSource: null,
       connected: false,
@@ -100,11 +102,11 @@
     function updateTitle() { const count = state.unreadTaskIds.size; document.title = count > 0 ? `(${count}) MACP Notify` : "MACP Notify"; el.unread.textContent = `Unread: ${count}`; }
     function showTokenDialog() { el.tokenInput.value = state.token ? "" : ""; if (typeof el.dialog.showModal === "function") el.dialog.showModal(); else el.dialog.setAttribute("open", ""); }
     async function apiFetch(path, options = {}) { const headers = new Headers(options.headers || {}); if (state.token) headers.set("Authorization", `Bearer ${state.token}`); const response = await fetch(path, { ...options, headers }); if (response.status === 401) { setStatus("auth required"); showTokenDialog(); throw new Error("Unauthorized"); } if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); }
-    async function loadTasks() { try { const data = await apiFetch("/api/tasks?limit=200"); state.tasks.clear(); for (const task of data.tasks || []) upsertTaskFromApi(task); render(); } catch (error) { console.warn(error); } }
+    async function loadTasks() { try { const data = await apiFetch("/api/tasks?limit=200"); if (!state.hasStoredCursor && Number.isFinite(Number(data.max_event_id))) { state.lastEventId = Number(data.max_event_id); localStorage.setItem(STORAGE_KEYS.lastEventId, String(state.lastEventId)); state.hasStoredCursor = true; } state.tasks.clear(); for (const task of data.tasks || []) upsertTaskFromApi(task); render(); } catch (error) { console.warn(error); } }
     function upsertTaskFromApi(row) { const packet = row.latest_packet || row; const taskId = row.task_id || packet.task_id; if (taskId) state.tasks.set(taskId, { row, packet }); }
     function buildStreamUrl() { const params = new URLSearchParams(); params.set("last_event_id", String(state.lastEventId || 0)); if (state.token) params.set("token", state.token); return `/api/stream?${params.toString()}`; }
     function connectStream() { if (state.eventSource) state.eventSource.close(); setStatus("connecting"); const es = new EventSource(buildStreamUrl()); state.eventSource = es; es.onopen = () => { state.connected = true; setStatus("connected"); }; es.onerror = () => { state.connected = false; setStatus("error reconnecting"); }; es.addEventListener("packet", handlePacketEvent); es.addEventListener("ack", () => {}); es.addEventListener("retry_requested", () => {}); }
-    function handlePacketEvent(event) { const packet = JSON.parse(event.data); const eventId = Number(event.lastEventId || packet.event_id || 0); if (eventId > 0) { state.lastEventId = Math.max(state.lastEventId || 0, eventId); localStorage.setItem(STORAGE_KEYS.lastEventId, String(state.lastEventId)); } const taskId = packet.task_id; const existing = state.tasks.get(taskId) || {}; state.tasks.set(taskId, { row: { ...(existing.row || {}), task_id: taskId, latest_packet: packet, status: packet.status, task_type: packet.task_type, intent: packet.intent, command: packet.command, priority: packet.priority, summary: packet.summary, mood_computed: packet.mood_computed, updated_at: packet.received_at || packet.created_at, acknowledged: false }, packet }); state.unreadTaskIds.add(taskId); saveUnread(); render(); }
+    function handlePacketEvent(event) { const packet = JSON.parse(event.data); const eventId = Number(event.lastEventId || packet.event_id || 0); if (eventId > 0) { state.lastEventId = Math.max(state.lastEventId || 0, eventId); localStorage.setItem(STORAGE_KEYS.lastEventId, String(state.lastEventId)); state.hasStoredCursor = true; } const taskId = packet.task_id; const existing = state.tasks.get(taskId) || {}; state.tasks.set(taskId, { row: { ...(existing.row || {}), task_id: taskId, latest_packet: packet, status: packet.status, task_type: packet.task_type, intent: packet.intent, command: packet.command, priority: packet.priority, summary: packet.summary, mood_computed: packet.mood_computed, updated_at: packet.received_at || packet.created_at, acknowledged: false }, packet }); state.unreadTaskIds.add(taskId); saveUnread(); render(); }
     function markRead(taskId) { state.unreadTaskIds.delete(taskId); saveUnread(); render(); }
     function safeUrl(value) { try { const url = new URL(value, window.location.href); if (!["http:", "https:"].includes(url.protocol)) return null; return url.href; } catch { return null; } }
     function text(tag, value, className) { const node = document.createElement(tag); if (className) node.className = className; node.textContent = value == null || value === "" ? "-" : String(value); return node; }

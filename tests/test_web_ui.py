@@ -23,6 +23,9 @@ def test_web_index_security_and_storage_markers():
     assert "textContent" in body
     assert "macp_token" in body
     assert "macp_last_event_id" in body
+    assert "storedLastEventId" in body
+    assert "hasStoredCursor" in body
+    assert "max_event_id" in body
     assert "macp_unread_task_ids" in body
     assert "EventSource" in body
     assert "Authorization" in body

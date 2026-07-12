@@ -23,13 +23,24 @@ def configure(tmp_path, token=None):
     return TestClient(app)
 
 
+def test_tasks_returns_max_event_id(tmp_path):
+    client = configure(tmp_path)
+    assert client.get("/api/tasks").json()["max_event_id"] == 0
+    response = client.post("/api/notify", json=load("notify_done.json"))
+    assert response.status_code == 201
+    body = client.get("/api/tasks").json()
+    assert body["max_event_id"] == response.json()["event_id"]
+
+
 def test_notify_and_get_tasks(tmp_path):
     client = configure(tmp_path)
     r = client.post("/api/notify", json=load("notify_done.json"))
     assert r.status_code == 201
     body = r.json()
     assert body["mood_computed"] == "caution"
-    listed = client.get("/api/tasks").json()["tasks"]
+    listed_body = client.get("/api/tasks").json()
+    assert listed_body["max_event_id"] == body["event_id"]
+    listed = listed_body["tasks"]
     assert len(listed) == 1
     detail = client.get(f"/api/tasks/{body['task_id']}").json()
     assert detail["task"]["task_id"] == body["task_id"]

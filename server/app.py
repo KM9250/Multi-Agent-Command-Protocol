@@ -244,7 +244,11 @@ async def tasks(
     intent: str | None = None, acknowledged: bool | None = None,
     limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0),
 ):
-    return {"ok": True, "tasks": store.list_tasks(status=status, task_type=task_type, intent=intent, acknowledged=acknowledged, limit=limit, offset=offset)}
+    return {
+        "ok": True,
+        "tasks": store.list_tasks(status=status, task_type=task_type, intent=intent, acknowledged=acknowledged, limit=limit, offset=offset),
+        "max_event_id": store.get_max_event_id(),
+    }
 
 
 @app.get("/api/tasks/{task_id}", dependencies=[Depends(require_auth)])
