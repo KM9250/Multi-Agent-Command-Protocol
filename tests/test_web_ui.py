@@ -35,3 +35,11 @@ def test_web_ui_uses_safe_text_rendering_and_cursor_storage():
     assert "storedLastEventId" in html
     assert "hasStoredCursor" in html
     assert "max_event_id" in html
+    assert "mood_computed" in html
+    assert "requires_user_action" in html
+    assert 'id="unread-count"' in html
+    assert "document.title" in html
+    assert 'id="status-filter"' in html
+    assert 'id="task-type-filter"' in html
+    assert "try" in html
+    assert "loadUnreadTaskIds" in html
