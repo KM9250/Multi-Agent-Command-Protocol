@@ -93,3 +93,16 @@ def test_task_filters(tmp_path):
     tasks = client.get("/api/tasks?status=done&acknowledged=false").json()["tasks"]
     assert len(tasks) == 1
     assert tasks[0]["task_id"] == done["task_id"]
+
+
+def test_tasks_include_max_event_id(tmp_path):
+    client = configure(tmp_path)
+    empty = client.get("/api/tasks")
+    assert empty.status_code == 200
+    assert empty.json()["max_event_id"] == 0
+
+    notified = client.post("/api/notify", json=load("notify_done.json"))
+    assert notified.status_code == 201
+    listed = client.get("/api/tasks")
+    assert listed.status_code == 200
+    assert listed.json()["max_event_id"] == notified.json()["event_id"]

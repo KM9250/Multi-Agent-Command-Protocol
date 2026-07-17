@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from .config import get_settings
@@ -38,6 +38,7 @@ app.add_middleware(
 app.state.settings = settings
 app.state.store = Store(settings.db_path, settings.jsonl_path)
 app.state.bus = EventBus()
+WEB_INDEX = Path(__file__).resolve().parents[1] / "clients" / "web" / "index.html"
 
 
 def error_response(code: str, message: str, http_status: int, fields: list[str] | None = None) -> JSONResponse:
@@ -183,6 +184,11 @@ def get_store(request: Request) -> Store:
     return request.app.state.store
 
 
+@app.get("/", include_in_schema=False)
+async def web_index():
+    return FileResponse(WEB_INDEX, media_type="text/html")
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
@@ -236,7 +242,11 @@ async def tasks(
     intent: str | None = None, acknowledged: bool | None = None,
     limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0),
 ):
-    return {"ok": True, "tasks": store.list_tasks(status=status, task_type=task_type, intent=intent, acknowledged=acknowledged, limit=limit, offset=offset)}
+    return {
+        "ok": True,
+        "tasks": store.list_tasks(status=status, task_type=task_type, intent=intent, acknowledged=acknowledged, limit=limit, offset=offset),
+        "max_event_id": store.get_max_event_id(),
+    }
 
 
 @app.get("/api/tasks/{task_id}", dependencies=[Depends(require_auth)])

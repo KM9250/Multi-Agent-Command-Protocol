@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MACP Tasks</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 2rem auto; max-width: 900px; padding: 0 1rem; }
+    header, form, .task-meta { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+    input { min-width: 18rem; padding: .5rem; }
+    button { padding: .5rem .75rem; cursor: pointer; }
+    #status { color: #667; }
+    #tasks { display: grid; gap: .75rem; padding: 0; list-style: none; }
+    .task { border: 1px solid #8886; border-radius: .5rem; padding: 1rem; }
+    .task.unread { border-left: .35rem solid #e28a16; }
+    .task h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+    .task p { margin: .4rem 0; white-space: pre-wrap; }
+    .task-meta { color: #667; font-size: .9rem; }
+    .result { margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MACP Tasks</h1>
+    <span id="status" aria-live="polite">Connecting…</span>
+    <span id="unread-count">Unread: 0</span>
+  </header>
+  <form id="token-form">
+    <label>Token <input id="token" type="password" autocomplete="off" placeholder="Optional MACP token"></label>
+    <button type="submit">Reconnect</button>
+  </form>
+  <p>Unread task updates are tracked only in this browser; opening a task does not acknowledge it on the server.</p>
+  <form id="filters">
+    <label>Status <select id="status-filter"><option value="">All</option><option>queued</option><option>running</option><option>done</option><option>failed</option><option>blocked</option><option>need_review</option></select></label>
+    <label>Task type <input id="task-type-filter" type="search" placeholder="Any task type"></label>
+    <label><input id="unread-filter" type="checkbox"> Unread only</label>
+    <label><input id="requires-user-action-filter" type="checkbox"> Requires user action</label>
+    <label>Search <input id="text-filter" type="search" placeholder="Summary, message, task, or agent"></label>
+  </form>
+  <ul id="tasks"></ul>
+
+  <script>
+    (() => {
+      const TOKEN_KEY = "macp_token";
+      const LAST_EVENT_ID_KEY = "macp_last_event_id";
+      const UNREAD_TASK_IDS_KEY = "macp_unread_task_ids";
+      const tokenInput = document.querySelector("#token");
+      const tokenForm = document.querySelector("#token-form");
+      const status = document.querySelector("#status");
+      const unreadCount = document.querySelector("#unread-count");
+      const tasksElement = document.querySelector("#tasks");
+      const filters = document.querySelector("#filters");
+      const statusFilter = document.querySelector("#status-filter");
+      const taskTypeFilter = document.querySelector("#task-type-filter");
+      const unreadFilter = document.querySelector("#unread-filter");
+      const requiresUserActionFilter = document.querySelector("#requires-user-action-filter");
+      const textFilter = document.querySelector("#text-filter");
+      let eventSource;
+      let tasks = [];
+
+      function loadUnreadTaskIds() {
+        try {
+          const stored = JSON.parse(localStorage.getItem(UNREAD_TASK_IDS_KEY) || "[]");
+          return new Set(Array.isArray(stored) ? stored : []);
+        } catch (_) {
+          return new Set();
+        }
+      }
+
+      let unreadTaskIds = loadUnreadTaskIds();
+
+      tokenInput.value = localStorage.getItem(TOKEN_KEY) || "";
+
+      function saveUnreadTaskIds() {
+        localStorage.setItem(UNREAD_TASK_IDS_KEY, JSON.stringify([...unreadTaskIds]));
+      }
+
+      function updateUnreadDisplay() {
+        const count = unreadTaskIds.size;
+        unreadCount.textContent = `Unread: ${count}`;
+        document.title = count > 0 ? `(${count}) MACP Tasks` : "MACP Tasks";
+      }
+
+      function apiHeaders() {
+        const token = localStorage.getItem(TOKEN_KEY);
+        return token ? { "X-MACP-Token": token } : {};
+      }
+
+      function displayValue(value) {
+        return value == null || value === "" ? "—" : String(value);
+      }
+
+      function appendText(parent, tagName, value, className) {
+        const element = document.createElement(tagName);
+        if (className) element.className = className;
+        element.textContent = displayValue(value);
+        parent.append(element);
+        return element;
+      }
+
+      function isHttpUrl(value) {
+        try {
+          const url = new URL(value);
+          return url.protocol === "http:" || url.protocol === "https:";
+        } catch (_) {
+          return false;
+        }
+      }
+
+      function packetFor(task) {
+        return task.latest_packet || task;
+      }
+
+      function matchesFilters(task) {
+        const packet = packetFor(task);
+        const evaluation = packet.evaluation || {};
+        const agentId = (packet.from || {}).agent_id || task.agent_id || "";
+        const searchText = [packet.summary, packet.agent_message, task.task_id, agentId]
+          .map((value) => String(value || "").toLowerCase()).join(" ");
+        return (!statusFilter.value || (packet.status || task.status) === statusFilter.value)
+          && (!taskTypeFilter.value || (packet.task_type || task.task_type || "").toLowerCase().includes(taskTypeFilter.value.toLowerCase()))
+          && (!unreadFilter.checked || unreadTaskIds.has(task.task_id))
+          && (!requiresUserActionFilter.checked || evaluation.requires_user_action === true || task.requires_user_action === true)
+          && (!textFilter.value || searchText.includes(textFilter.value.toLowerCase()));
+      }
+
+      function renderTasks() {
+        tasksElement.replaceChildren();
+        for (const task of tasks.filter(matchesFilters)) {
+          const packet = packetFor(task);
+          const evaluation = packet.evaluation || {};
+          const computedMood = packet.mood_computed || task.mood_computed;
+          const evaluationMood = evaluation.mood || task.mood;
+          const item = document.createElement("li");
+          item.className = "task" + (unreadTaskIds.has(task.task_id) ? " unread" : "");
+          item.tabIndex = 0;
+          item.addEventListener("click", () => {
+            unreadTaskIds.delete(task.task_id);
+            saveUnreadTaskIds();
+            updateUnreadDisplay();
+            renderTasks();
+          });
+
+          appendText(item, "h2", packet.summary);
+          const meta = document.createElement("div");
+          meta.className = "task-meta";
+          appendText(meta, "span", `Task: ${displayValue(task.task_id)}`);
+          appendText(meta, "span", `Status: ${displayValue(packet.status || task.status)}`);
+          appendText(meta, "span", `Intent: ${displayValue(packet.intent || task.intent)}`);
+          appendText(meta, "span", `Task type: ${displayValue(packet.task_type || task.task_type)}`);
+          appendText(meta, "span", `Command: ${displayValue(packet.command || task.command)}`);
+          appendText(meta, "span", `From: ${displayValue((packet.from || {}).agent_id || task.agent_id)}`);
+          appendText(meta, "span", `Mood: ${displayValue(computedMood)}`);
+          if (evaluationMood !== computedMood) appendText(meta, "span", `Evaluation mood: ${displayValue(evaluationMood)}`);
+          appendText(meta, "span", `Confidence: ${displayValue(evaluation.confidence)}`);
+          appendText(meta, "span", `Requires user action: ${displayValue(evaluation.requires_user_action ?? task.requires_user_action)}`);
+          appendText(meta, "span", `Priority: ${displayValue(packet.priority || task.priority)}`);
+          appendText(meta, "span", `Acknowledged: ${displayValue(task.acknowledged)}`);
+          appendText(meta, "span", `Received: ${displayValue(packet.received_at || packet.created_at || task.created_at)}`);
+          item.append(meta);
+          if (packet.agent_message) appendText(item, "p", packet.agent_message);
+          if (packet.detail) appendText(item, "p", packet.detail);
+
+          const result = packet.result || {};
+          if (result.url || result.path) {
+            const resultElement = document.createElement("div");
+            resultElement.className = "result";
+            if (isHttpUrl(result.url)) {
+              const link = document.createElement("a");
+              link.href = result.url;
+              link.target = "_blank";
+              link.rel = "noopener noreferrer";
+              link.textContent = result.url;
+              resultElement.append(link);
+            } else if (result.url) {
+              appendText(resultElement, "span", result.url);
+            }
+            if (result.path) appendText(resultElement, "div", `Path: ${result.path}`);
+            item.append(resultElement);
+          }
+          tasksElement.append(item);
+        }
+        updateUnreadDisplay();
+      }
+
+      function upsertTask(packet, markUnread) {
+        const index = tasks.findIndex((task) => task.task_id === packet.task_id);
+        const task = { ...(index >= 0 ? tasks[index] : {}), ...packet, latest_packet: packet };
+        if (index >= 0) tasks[index] = task;
+        else tasks.unshift(task);
+        if (markUnread) {
+          unreadTaskIds.add(packet.task_id);
+          saveUnreadTaskIds();
+          updateUnreadDisplay();
+        }
+        renderTasks();
+      }
+
+      function connect(lastEventId) {
+        if (eventSource) eventSource.close();
+        const params = new URLSearchParams({ last_event_id: String(lastEventId) });
+        const token = localStorage.getItem(TOKEN_KEY);
+        if (token) params.set("token", token);
+        eventSource = new EventSource(`/api/stream?${params}`);
+        eventSource.addEventListener("open", () => { status.textContent = "Live updates connected"; });
+        eventSource.addEventListener("error", () => { status.textContent = "Live updates reconnecting…"; });
+        eventSource.addEventListener("packet", (event) => {
+          const packet = JSON.parse(event.data);
+          localStorage.setItem(LAST_EVENT_ID_KEY, String(packet.event_id));
+          upsertTask(packet, true);
+        });
+      }
+
+      async function loadTasks() {
+        status.textContent = "Loading tasks…";
+        const response = await fetch("/api/tasks", { headers: apiHeaders() });
+        if (!response.ok) throw new Error(`Task request failed (${response.status})`);
+        const data = await response.json();
+        tasks = data.tasks || [];
+        renderTasks();
+        const storedLastEventId = localStorage.getItem(LAST_EVENT_ID_KEY);
+        const hasStoredCursor = storedLastEventId !== null;
+        const cursor = hasStoredCursor ? storedLastEventId : data.max_event_id;
+        if (!hasStoredCursor) localStorage.setItem(LAST_EVENT_ID_KEY, String(cursor));
+        connect(cursor);
+      }
+
+      filters.addEventListener("input", renderTasks);
+      filters.addEventListener("change", renderTasks);
+      updateUnreadDisplay();
+
+      tokenForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        localStorage.setItem(TOKEN_KEY, tokenInput.value);
+        loadTasks().catch((error) => { status.textContent = error.message; });
+      });
+
+      loadTasks().catch((error) => { status.textContent = error.message; });
+    })();
+  </script>
+</body>
+</html>
