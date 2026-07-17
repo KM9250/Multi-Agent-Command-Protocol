@@ -96,3 +96,11 @@ When no events are available for 15 seconds, the stream sends a heartbeat commen
 - Added `Last-Event-ID` / `?last_event_id=` support.
 - Added `?token=` support for EventSource.
 - Added heartbeat and backlog replay tests.
+
+## Web UI
+
+Open `http://127.0.0.1:8765/` to view the bundled static task UI. It loads the task list from
+`GET /api/tasks` and subscribes to `GET /api/stream`. Entering a token in the UI stores it in
+browser local storage and sends it as `X-MACP-Token` for API calls and as the EventSource
+`token` query parameter. The UI stores its SSE cursor and browser-local unread task IDs; marking
+a task read in the UI does not acknowledge it on the server.
