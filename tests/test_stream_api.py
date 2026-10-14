@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
+import httpx
 from fastapi.testclient import TestClient
 
 from server.app import app, format_sse, parse_last_event_id
@@ -50,6 +52,48 @@ def read_sse_event(response, wanted_event="packet", max_lines=100):
     raise AssertionError(f"SSE event not found: {wanted_event}")
 
 
+def stream_response(path, headers=None, packet_count=1):
+    """Exercise the real ASGI route, disconnecting after the expected frames.
+
+    TestClient buffers response bodies until EOF, so it cannot consume an
+    infinite SSE stream. This client signals http.disconnect while the stream
+    is live and bounds the whole exchange, including failure cases.
+    """
+    async def collect():
+        request = httpx.Request("GET", "http://testserver" + path, headers=headers)
+        scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"},
+                 "http_version": "1.1", "method": "GET", "scheme": "http",
+                 "path": request.url.path, "raw_path": request.url.raw_path.split(b"?")[0],
+                 "query_string": request.url.query,
+                 "headers": [(name.lower(), value) for name, value in request.headers.raw],
+                 "server": ("testserver", 80), "client": ("testclient", 123)}
+        disconnect = asyncio.Event()
+        chunks = []
+        status_code = None
+        response_headers = []
+
+        async def receive():
+            await disconnect.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            nonlocal status_code, response_headers
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+                response_headers = message["headers"]
+                if packet_count == 0:
+                    disconnect.set()
+            elif message["type"] == "http.response.body":
+                chunks.append(message.get("body", b""))
+                if b"".join(chunks).count(b"event: packet\n") >= packet_count or not message.get("more_body"):
+                    disconnect.set()
+
+        await asyncio.wait_for(app(scope, receive, send), timeout=3)
+        return httpx.Response(status_code, headers=response_headers, content=b"".join(chunks))
+
+    return asyncio.run(collect())
+
+
 def test_notify_publishes_sse_event_row_shape(tmp_path):
     client = configure(tmp_path)
     queue = app.state.bus.subscribe()
@@ -70,9 +114,9 @@ def test_stream_backlog_replays_packet_event(tmp_path):
     client = configure(tmp_path)
     packet = load("notify_done.json")
     assert client.post("/api/notify", json=packet).status_code == 201
-    with client.stream("GET", "/api/stream?last_event_id=0") as response:
-        assert response.status_code == 200
-        event = read_sse_event(response)
+    response = stream_response("/api/stream?last_event_id=0")
+    assert response.status_code == 200
+    event = read_sse_event(response)
     data = json.loads(event["data"])
     assert event["id"] == "1"
     assert event["event"] == "packet"
@@ -93,9 +137,9 @@ def test_last_event_id_header_takes_precedence(tmp_path):
     second = load("notify_failed.json")
     assert client.post("/api/notify", json=first).status_code == 201
     assert client.post("/api/notify", json=second).status_code == 201
-    with client.stream("GET", "/api/stream?last_event_id=0", headers={"Last-Event-ID": "1"}) as response:
-        assert response.status_code == 200
-        event = read_sse_event(response)
+    response = stream_response("/api/stream?last_event_id=0", headers={"Last-Event-ID": "1"})
+    assert response.status_code == 200
+    event = read_sse_event(response)
     data = json.loads(event["data"])
     assert event["id"] == "2"
     assert data["task_id"] == second["task_id"]
@@ -114,10 +158,26 @@ def test_stream_rejects_invalid_last_event_id(tmp_path):
 def test_stream_token_auth(tmp_path):
     client = configure(tmp_path, token="secret")
     assert client.get("/api/stream?last_event_id=0").status_code == 401
-    with client.stream("GET", "/api/stream?last_event_id=0&token=secret") as response:
-        assert response.status_code == 200
-    with client.stream("GET", "/api/stream?last_event_id=0", headers={"Authorization": "Bearer secret"}) as response:
-        assert response.status_code == 200
+    response = stream_response("/api/stream?last_event_id=0&token=secret", packet_count=0)
+    assert response.status_code == 200
+    response = stream_response("/api/stream?last_event_id=0", headers={"Authorization": "Bearer secret"}, packet_count=0)
+    assert response.status_code == 200
+
+
+def test_last_event_id_backlog_contains_one_event_after_reposts(tmp_path):
+    client = configure(tmp_path)
+    first = client.post("/api/notify", json=load("notify_done.json")).json()
+    packet = {**load("notify_failed.json"), "producer_id": "map-coordination", "producer_event_id": "stable-id"}
+    created = client.post("/api/notify", json=packet)
+    assert created.status_code == 201
+    for _ in range(3):
+        assert client.post("/api/notify", json=packet).status_code == 200
+    response = stream_response("/api/stream", headers={"Last-Event-ID": str(first["event_id"])})
+    event = read_sse_event(response)
+    assert int(event["id"]) == created.json()["event_id"]
+    assert len(app.state.store.get_events_after(first["event_id"])) == 1
+    assert json.loads(event["data"])["producer_event_id"] == "stable-id"
+    assert not app.state.bus.subscribers
 
 
 def test_format_sse_adds_packet_event_id():

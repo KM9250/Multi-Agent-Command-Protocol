@@ -291,6 +291,14 @@
     }
   },
   "additionalProperties": true,
+  "dependentRequired": {
+    "producer_event_id": [
+      "producer_id"
+    ],
+    "producer_id": [
+      "producer_event_id"
+    ]
+  },
   "properties": {
     "actions": {
       "anyOf": [
@@ -412,6 +420,26 @@
       ],
       "default": null,
       "title": "Priority"
+    },
+    "producer_event_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "not": {
+        "pattern": "[^A-Za-z0-9._:-]"
+      },
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "title": "Producer Event Id",
+      "type": "string"
+    },
+    "producer_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "not": {
+        "pattern": "[^A-Za-z0-9._:-]"
+      },
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "title": "Producer Id",
+      "type": "string"
     },
     "protocol": {
       "const": "macp",

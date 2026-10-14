@@ -51,8 +51,22 @@ uvicorn server.app:app --host 0.0.0.0 --port 8765
 - 応答 `201`:
 
 ```json
-{ "ok": true, "event_id": 42, "task_id": "task-20260707-001", "mood_computed": "good" }
+{ "ok": true, "event_id": 42, "task_id": "task-20260707-001", "mood_computed": "good", "idempotent_replay": false }
 ```
+
+任意の `producer_id` / `producer_event_id` を指定した場合:
+
+| 状況 | HTTP | 動作 |
+| --- | --- | --- |
+| 初回 | `201` | events保存・tasks更新・冪等性記録をcommit後、JSONLへ追記しSSEへpublish |
+| 同じキー・同じ内容 | `200` | 初回の `event_id` / `task_id` / `mood_computed` と `idempotent_replay: true` を返す。tasks、JSONL、SSEを更新しない |
+| 同じキー・異なる内容 | `409` | `idempotency_conflict`。保存・更新・配信しない |
+| 片方のみ・不正なキー | `422` | `validation_error`。保存しない |
+
+内容の比較規則とキー制約は `protocol.md` §3。後続イベントでtasksが更新されても、古い通知の
+再配送で状態を巻き戻さない。`POST /api/handoff` も同じ保存処理とキーの名前空間を使い、
+任意キー付きの再配送は同じ規則になる。キーなしの `/api/handoff` は従来どおり `201`。
+ハンドオフの実行制御は追加しない。
 
 ### 2.2 `GET /api/tasks`
 
@@ -180,6 +194,15 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id);
 
+CREATE TABLE IF NOT EXISTS notification_idempotency (
+  producer_id TEXT NOT NULL,
+  producer_event_id TEXT NOT NULL,
+  payload_digest TEXT NOT NULL,
+  event_id INTEGER NOT NULL REFERENCES events(event_id),
+  task_id TEXT NOT NULL,
+  UNIQUE(producer_id, producer_event_id)
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
   task_id            TEXT PRIMARY KEY,
   task_type          TEXT,
@@ -217,13 +240,29 @@ CREATE TABLE IF NOT EXISTS handoffs (
 ```
 
 - 書き込みは「`events` 追記 → `tasks` upsert →（該当時）`handoffs` upsert」を**単一トランザクション**で行う
+- 任意キーがある場合は同じトランザクションで `notification_idempotency` もINSERTする。
+  `BEGIN IMMEDIATE` で独立したSQLite接続間の照会・保存を直列化し、DBの複合UNIQUE制約で
+  キーの重複を防ぐ。失敗時はイベント・タスク・handoff・冪等性記録をまとめてrollbackする。
+  競合する同一内容のPOSTは1件だけ作成し、残りは同じ `event_id` を返す。
+- 起動時の `CREATE TABLE IF NOT EXISTS` による追加なので、既存DBの行を削除・再作成しない。
+  キーの記録はSQLite再接続後も残る。自動期限切れ・削除・キーなしの過去通知への遡及適用はない。
 - `store.py` は上記を隠蔽するインターフェース（`append_event` / `get_events_after` / `list_tasks` / `get_task` / `ack` / `mark_retry` …）を提供し、SQLite 以外への差し替えを可能にしておく
 
 ### JSONL 監査ログ
 
-- `MACP_JSONL_PATH` に、受信した**生パケット**（正規化前）を 1 行 1 JSON で追記する
+- `MACP_JSONL_PATH` に、新規保存した**生パケット**（正規化前）を 1 行 1 JSON で追記する。冪等再送と409は追記しない
 - 目的: デバッグ・障害時の突き合わせ・将来の再インポート。主記録は SQLite
 - 追記失敗は警告ログにとどめ、API 処理は継続する
+
+### 保証範囲
+
+SQLiteが主記録であり、JSONL・ライブSSEとは単一の原子トランザクションにならない。
+DB commit後、JSONL追記やSSE publish前にプロセスが停止した場合、該当する副作用が欠落し得る。
+同一キーの再POSTではそれを再実行しないため、JSONL/SSEへの重複は作らないが、欠落の自動修復はしない。
+保存済みイベントは既存の `Last-Event-ID` によるSSE再接続で取得できる。
+SSEバスは従来どおりプロセス内のみで、複数worker間のライブ配信機構は追加していない。
+SQLiteのロック待ちが接続の既定timeout（5秒）を超えた場合は既存の500応答となり、
+後から同じ通知を再POSTしてよい。
 
 ## 7. 成果物配信（`GET /api/artifacts/{task_id}`、任意機能）
 
@@ -249,6 +288,7 @@ Web UI は `result.url` が無く `result.path` があるタスクに対し、�
 | 403 | `forbidden` | 成果物パスが許可ディレクトリ外 |
 | 404 | `not_found` | task_id 不存在、成果物なし、機能無効 |
 | 409 | `invalid_state` | 終端状態でないタスクへの ack など |
+| 409 | `idempotency_conflict` | 保存済みproducer eventと異なる内容 |
 | 422 | `validation_error` | パケット検証失敗（違反フィールドを `fields` に列挙） |
 | 500 | `internal_error` | 想定外（詳細はログのみ。応答に内部情報を含めない） |
 

@@ -27,6 +27,12 @@ KNOWN_TASK_TYPES = {"portfolio", "coding", "avatar_3d", "research", "document", 
 KNOWN_MOODS = {"good", "caution", "bad", "blocked", "unknown"}
 
 
+def producer_key_schema(schema: dict) -> None:
+    schema.pop("default", None)
+    # JSON Schema's regex end anchor may also match before a final newline.
+    schema["not"] = {"pattern": r"[^A-Za-z0-9._:-]"}
+
+
 class CompatModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -81,9 +87,27 @@ class Handoff(CompatModel):
 
 
 class MacpPacket(CompatModel):
+    model_config = ConfigDict(json_schema_extra={
+        "dependentRequired": {
+            "producer_id": ["producer_event_id"],
+            "producer_event_id": ["producer_id"],
+        },
+    })
+
     protocol: Protocol
     version: str = Field(pattern=r"^0\.\d+\.\d+$")
     task_id: str
+    # Omission is allowed; an explicitly supplied value must be a string.
+    producer_id: str = Field(
+        default=None, strict=True, min_length=1, max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+        json_schema_extra=producer_key_schema,
+    )
+    producer_event_id: str = Field(
+        default=None, strict=True, min_length=1, max_length=256,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+        json_schema_extra=producer_key_schema,
+    )
     task_type: str
     intent: Intent
     from_: AgentRef = Field(alias="from")
@@ -106,6 +130,8 @@ class MacpPacket(CompatModel):
     @classmethod
     def drop_server_fields(cls, data):
         if isinstance(data, dict):
+            if ("producer_id" in data) != ("producer_event_id" in data):
+                raise ValueError("producer_id and producer_event_id must be supplied together")
             return {k: v for k, v in data.items() if k not in SERVER_FIELDS}
         return data
 

@@ -27,6 +27,8 @@ MACP（Multi-Agent Command Protocol）パケットの共通仕様。
 | `protocol` | string | ✔ | 固定値 `"macp"` |
 | `version` | string | ✔ | semver。現行 `"0.1.0"` |
 | `task_id` | string | ✔ | タスク識別子。推奨形式 `task-YYYYMMDD-NNN`。同一 `task_id` への複数パケット送信で状態遷移を表す |
+| `producer_id` | string | △ | 冪等性の送信元スコープ。1〜128文字。指定時は `producer_event_id` も必須 |
+| `producer_event_id` | string | △ | 送信元が発行する安定した通知ID。1〜256文字。指定時は `producer_id` も必須 |
 | `task_type` | string | ✔ | [§6](#6-task_type) 参照。未知値も受理 |
 | `intent` | string | ✔ | [§4](#4-intent-一覧) 参照 |
 | `from` | object | ✔ | 送信元。`{agent_id: string(必須), agent_role: string?}` |
@@ -54,6 +56,32 @@ MACP（Multi-Agent Command Protocol）パケットの共通仕様。
 | `mood_computed` | string | サーバー導出の mood（導出規則は `notification-packet.md` §6） |
 
 クライアントがこれらを送信してきた場合、サーバーは無視して自身の値で上書きする。
+
+### 任意の冪等性キー
+
+`producer_id` と `producer_event_id` の組で、再配送された同じ通知を識別する。
+両方を省略した従来パケットは従来どおり毎回保存する。片方のみ、明示的な `null`、
+空文字、上限超過は `422`。キーに使える文字はASCII英数字と `.` / `_` / `:` / `-` のみで、
+空白・制御文字・その他のUnicode文字は拒否する。大文字小文字を区別し、trimなどの変換はしない。
+
+MAP COORD-4Aでは `producer_id: "map-coordination"` と、安定した
+`notificationId`（`map.notification.v1:<SHA-256 hex>`）を `producer_event_id` に設定する。
+これはMACP側の任意フィールド追加であり、MAPの送信処理を変更するものではない。
+`task_id` が同じでも別のproducer eventは保存でき、`running` → `done` の状態更新を維持する。
+
+同じキー・同じ正規化済み内容は保存済み `event_id` を返し、同じキーで内容が異なる場合は
+`409 idempotency_conflict`。再送時に `created_at` を現在時刻へ更新しないこと。
+比較対象はPydantic検証と既存の正規化を通した全フィールド（未知の追加フィールドも含む）で、
+トップレベルのサーバー付与フィールド `event_id` / `received_at` / `mood_computed` のみ除く。
+JSONオブジェクトのキーを再帰的にソートし、空白なし・ASCIIエスケープありのJSONをUTF-8化した
+SHA-256の小文字hex digestを保存する。JSON記法上の順序・空白・文字エスケープ差は一致するが、
+文字列内の空白や配列順序は内容として比較する。日時は既存のPydanticシリアライズに従い、
+異なるタイムゾーン表記をUTCへ統一する追加処理は行わない。
+
+`producer_id` は認証済みユーザーIDではない。承認・管理・Workflow操作の権限を与えず、
+引き続き単一の `MACP_TOKEN` で認証する。キーの名前空間を利用者ごとに認可する機能はない。
+仕様と制約の正本は `server/schemas.py`。`python scripts/generate_schema.py` でJSON Schemaと
+TypeScriptの冪等性フィールド宣言を再生成する。
 
 ## 4. `intent` 一覧
 

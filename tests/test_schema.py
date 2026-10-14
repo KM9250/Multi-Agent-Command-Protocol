@@ -127,6 +127,8 @@ def test_handoff_confidence_gate_range_rejected():
 
 def test_schema_drift(tmp_path):
     before = (ROOT / "schema" / "macp-packet.schema.json").read_text(encoding="utf-8")
+    ts_before = (ROOT / "schema" / "macp.d.ts").read_text(encoding="utf-8")
     subprocess.run([sys.executable, "scripts/generate_schema.py"], cwd=ROOT, check=True)
     after = (ROOT / "schema" / "macp-packet.schema.json").read_text(encoding="utf-8")
     assert before == after
+    assert ts_before == (ROOT / "schema" / "macp.d.ts").read_text(encoding="utf-8")
