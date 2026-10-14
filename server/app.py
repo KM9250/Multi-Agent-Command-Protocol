@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from .config import get_settings
 from .event_bus import EventBus
 from .schemas import MacpPacket, normalize_packet
-from .store import Store
+from .store import IdempotencyConflict, Store
 
 settings = get_settings()
 Path("./data").mkdir(exist_ok=True)
@@ -71,6 +71,14 @@ async def http_handler(request: Request, exc: HTTPException):
     if exc.status_code == 422:
         return error_response("validation_error", str(exc.detail), 422)
     return error_response("internal_error", "Internal server error", exc.status_code)
+
+
+@app.exception_handler(IdempotencyConflict)
+async def idempotency_conflict_handler(request: Request, exc: IdempotencyConflict):
+    return error_response(
+        "idempotency_conflict", "Producer event key already has a different payload", 409,
+        ["producer_id", "producer_event_id"],
+    )
 
 
 @app.exception_handler(Exception)
@@ -192,11 +200,15 @@ async def health():
 async def notify(packet: MacpPacket, request: Request, store: Store = Depends(get_store)):
     raw = await request.json()
     normalized = normalize_packet(packet)
-    event_id = store.append_packet(normalized, raw)
+    result = store.append_packet(normalized, raw)
+    event_id, normalized = result.event_id, result.packet
+    if result.idempotent_replay:
+        return JSONResponse({"ok": True, "event_id": event_id, "task_id": normalized["task_id"],
+                             "mood_computed": normalized["mood_computed"], "idempotent_replay": True})
     normalized["event_id"] = event_id
     logger.info("received task_id=%s intent=%s status=%s mood_computed=%s summary=%s", normalized.get("task_id"), normalized.get("intent"), normalized.get("status"), normalized.get("mood_computed"), normalized.get("summary"))
     await request.app.state.bus.publish(packet_event(event_id, normalized))
-    return {"ok": True, "event_id": event_id, "task_id": normalized["task_id"], "mood_computed": normalized["mood_computed"]}
+    return {"ok": True, "event_id": event_id, "task_id": normalized["task_id"], "mood_computed": normalized["mood_computed"], "idempotent_replay": False}
 
 
 @app.post("/api/handoff", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth)])
@@ -205,10 +217,15 @@ async def handoff(packet: MacpPacket, request: Request, store: Store = Depends(g
         raise HTTPException(status_code=422, detail="intent must be handoff_agent")
     raw = await request.json()
     normalized = normalize_packet(packet)
-    event_id = store.append_packet(normalized, raw)
+    result = store.append_packet(normalized, raw)
+    event_id, normalized = result.event_id, result.packet
+    if result.idempotent_replay:
+        return JSONResponse({"ok": True, "event_id": event_id,
+                             "handoff_id": normalized["handoff"]["handoff_id"],
+                             "state": "pending", "idempotent_replay": True})
     normalized["event_id"] = event_id
     await request.app.state.bus.publish(packet_event(event_id, normalized))
-    return {"ok": True, "event_id": event_id, "handoff_id": normalized["handoff"]["handoff_id"], "state": "pending"}
+    return {"ok": True, "event_id": event_id, "handoff_id": normalized["handoff"]["handoff_id"], "state": "pending", "idempotent_replay": False}
 
 
 @app.get("/api/stream", dependencies=[Depends(require_stream_auth)])

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import hashlib
 import json
 import logging
 import sqlite3
 import threading
 from pathlib import Path
+
+from .schemas import SERVER_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +21,14 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id);
+CREATE TABLE IF NOT EXISTS notification_idempotency (
+  producer_id TEXT NOT NULL,
+  producer_event_id TEXT NOT NULL,
+  payload_digest TEXT NOT NULL,
+  event_id INTEGER NOT NULL REFERENCES events(event_id),
+  task_id TEXT NOT NULL,
+  UNIQUE(producer_id, producer_event_id)
+);
 CREATE TABLE IF NOT EXISTS tasks (
   task_id TEXT PRIMARY KEY, task_type TEXT, intent TEXT, command TEXT, status TEXT NOT NULL,
   priority TEXT, summary TEXT, agent_id TEXT, mood TEXT, mood_computed TEXT,
@@ -32,6 +44,23 @@ CREATE TABLE IF NOT EXISTS handoffs (
 """
 
 
+class IdempotencyConflict(Exception):
+    """A producer reused an event key for a different normalized payload."""
+
+
+@dataclass(frozen=True)
+class AppendResult:
+    event_id: int
+    packet: dict
+    idempotent_replay: bool = False
+
+
+def payload_digest(normalized: dict) -> str:
+    content = {k: v for k, v in normalized.items() if k not in SERVER_FIELDS}
+    canonical = json.dumps(content, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 class Store:
     def __init__(self, db_path: str, jsonl_path: str | None):
         self.db_path = db_path
@@ -45,16 +74,33 @@ class Store:
         with self._conn:
             self._conn.executescript(DDL)
 
-    def append_packet(self, normalized: dict, raw: dict) -> int:
+    def append_packet(self, normalized: dict, raw: dict) -> AppendResult:
         payload = json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
         task_id = normalized["task_id"]
         now = normalized["received_at"]
         ev = normalized.get("evaluation") or {}
         agent = normalized.get("from") or {}
+        producer_id = normalized.get("producer_id")
+        producer_event_id = normalized.get("producer_event_id")
+        digest = payload_digest(normalized) if producer_id is not None else None
         with self._lock:
             cur = self._conn.cursor()
-            cur.execute("BEGIN")
             try:
+                # Serialize the read/insert decision across independent DB connections.
+                # The UNIQUE constraint is the final database-level guard.
+                cur.execute("BEGIN IMMEDIATE")
+                if producer_id is not None:
+                    existing = cur.execute(
+                        """SELECT i.payload_digest, i.event_id, e.payload
+                           FROM notification_idempotency i JOIN events e USING(event_id)
+                           WHERE i.producer_id=? AND i.producer_event_id=?""",
+                        (producer_id, producer_event_id),
+                    ).fetchone()
+                    if existing is not None:
+                        if existing["payload_digest"] != digest:
+                            raise IdempotencyConflict
+                        self._conn.commit()
+                        return AppendResult(existing["event_id"], json.loads(existing["payload"]), True)
                 cur.execute(
                     "INSERT INTO events(task_id,event_type,payload,created_at) VALUES(?,?,?,?)",
                     (task_id, "packet", payload, now),
@@ -91,12 +137,19 @@ class Store:
                         (h["handoff_id"], task_id, h.get("requested_command"), agent.get("agent_id"), to.get("target"),
                          h.get("return_to"), h.get("hop"), h.get("max_hops"), "pending", payload, now, now),
                     )
+                if producer_id is not None:
+                    cur.execute(
+                        """INSERT INTO notification_idempotency
+                           (producer_id,producer_event_id,payload_digest,event_id,task_id)
+                           VALUES(?,?,?,?,?)""",
+                        (producer_id, producer_event_id, digest, event_id, task_id),
+                    )
                 self._conn.commit()
             except Exception:
                 self._conn.rollback()
                 raise
         self._append_jsonl(raw)
-        return event_id
+        return AppendResult(event_id, normalized)
 
     def _append_jsonl(self, raw: dict) -> None:
         if not self.jsonl_path:

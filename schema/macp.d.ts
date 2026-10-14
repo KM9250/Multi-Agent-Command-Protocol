@@ -18,7 +18,15 @@ export interface Handoff {
   return_to?: string; return_intent?: string; return_format?: string; hop: number; max_hops: number;
   confidence_gate?: number; must_return_to?: boolean; [key: string]: unknown;
 }
-export interface MacpPacket {
+// BEGIN GENERATED IDEMPOTENCY FIELDS
+export interface ProducerEventFields {
+  /** Supply both keys. 1–256 ASCII letters, digits, '.', '_', ':', '-'. */
+  producer_event_id?: string;
+  /** Supply both keys. 1–128 ASCII letters, digits, '.', '_', ':', '-'. */
+  producer_id?: string;
+}
+// END GENERATED IDEMPOTENCY FIELDS
+export interface MacpPacket extends ProducerEventFields {
   protocol: "macp"; version: string; task_id: string; task_type: TaskType; intent: Intent; from: AgentRef;
   to?: Destination; command?: string; command_alias?: string; status: Status; priority?: Priority;
   summary: string; requirement_summary?: string; agent_message?: string; detail?: string;
